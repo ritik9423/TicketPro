@@ -14,10 +14,13 @@ class WebSocketManager {
   connect() {
     if (this.connected || this.socket) return;
 
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname;
-    // Connect to native STOMP WebSocket endpoint registered in Spring
-    const wsUrl = `${wsProtocol}//${wsHost}:8081/ws`;
+    let wsUrl = import.meta.env.VITE_WS_URL;
+    if (!wsUrl) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.hostname;
+      // Connect to native STOMP WebSocket endpoint registered in Spring
+      wsUrl = `${wsProtocol}//${wsHost}:8081/ws`;
+    }
 
     try {
       this.socket = new WebSocket(wsUrl);

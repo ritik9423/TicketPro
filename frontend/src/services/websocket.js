@@ -24,11 +24,14 @@ class TicketProWebSocketService {
     }
 
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const isDev = window.location.port !== '';
-      const wsUrl = isDev 
-        ? `${protocol}//${window.location.host}/ws/websocket`
-        : `${protocol}//${window.location.hostname}:8081/ws/websocket`;
+      let wsUrl = import.meta.env.VITE_WS_URL;
+      if (!wsUrl) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const isDev = window.location.port !== '';
+        wsUrl = isDev 
+          ? `${protocol}//${window.location.host}/ws/websocket`
+          : `${protocol}//${window.location.hostname}:8081/ws/websocket`;
+      }
 
       this.ws = new WebSocket(wsUrl);
 
