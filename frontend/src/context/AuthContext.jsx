@@ -193,6 +193,10 @@ export const AuthProvider = ({ children }) => {
         throw new Error('Invalid email address or password.');
       }
 
+      if ((data.role || '').toUpperCase() === 'SUPER_ADMIN') {
+        throw new Error('SUPER_ADMIN_PORTAL_ONLY');
+      }
+
       const userProfile = {
         id: data.userId || data.id || Date.now(),
         name: data.name || emailLower.split('@')[0],
