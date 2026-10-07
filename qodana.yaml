@@ -1,0 +1,13 @@
+version: "1.0"
+profile:
+  name: qodana.recommended
+projectJDK: "17"
+exclude:
+  - name: KotlinMavenPluginPhase
+    paths:
+      - .m2
+      - "**/.m2/**"
+  - name: All
+    paths:
+      - .m2
+      - "**/.m2/**"

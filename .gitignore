@@ -1,0 +1,40 @@
+# Environment files
+.env
+.env.local
+*.env
+
+# Node & Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Java / Maven Build & Target
+target/
+*.jar
+*.war
+.m2/
+
+# IDE & Editor
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+qodana-results/
+
+# Uploads & Temporary Media
+uploads/
+*.traineddata
+
+# Logs
+*.log
+logs/
+backend/*.log
+backend/stderr.txt
+backend/stdout.txt
+
+# OS specific
+.DS_Store
+Thumbs.db

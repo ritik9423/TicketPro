@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="tp-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06b6d4" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#0284c7" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Modern Rounded Squircle Container -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#tp-grad)" filter="url(#shadow)" />
+  <rect x="3" y="3" width="58" height="58" rx="15" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-opacity="0.35" />
+
+  <!-- Ultra-Crisp TicketPro Core Emblem -->
+  <g fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Ticket Body with Notches -->
+    <path d="M14 24 C 18 24, 18 32, 14 32 L 14 44 C 14 46.2 15.8 48 18 48 L 46 48 C 48.2 48 50 46.2 50 44 L 50 32 C 46 32, 46 24, 50 24 L 50 20 C 50 17.8 48.2 16 46 16 L 18 16 C 15.8 16 14 17.8 14 20 Z" />
+    <!-- Ticket Detail Lines -->
+    <line x1="24" y1="28" x2="40" y2="28" />
+    <line x1="24" y1="36" x2="34" y2="36" />
+  </g>
+</svg>
