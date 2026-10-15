@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
@@ -12,7 +11,6 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
 public class Comment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -30,7 +28,7 @@ public class Comment {
     private String comment;
 
     @Column(name = "is_internal", nullable = false)
-    private boolean isInternal = false;
+    private boolean isInternal;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

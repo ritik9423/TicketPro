@@ -3,7 +3,6 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
@@ -17,7 +16,6 @@ import java.util.List;
 })
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class FormField {
 
@@ -42,10 +40,10 @@ public class FormField {
     private String placeholder;
 
     @Column(nullable = false)
-    private Boolean required = false;
+    private Boolean required;
 
     @Column(name = "display_order", nullable = false)
-    private Integer displayOrder = 0;
+    private Integer displayOrder;
 
     @Column(name = "validation_config", columnDefinition = "TEXT")
     private String validationConfig;
@@ -55,7 +53,7 @@ public class FormField {
 
     @OneToMany(mappedBy = "field", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
     @OrderBy("displayOrder ASC")
-    private List<FormFieldOption> options = new ArrayList<>();
+    private List<FormFieldOption> options;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -63,12 +61,19 @@ public class FormField {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    public FormField() {
+        this.required = false;
+        this.displayOrder = 0;
+        this.options = new ArrayList<>();
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (required == null) required = false;
         if (displayOrder == null) displayOrder = 0;
+        if (options == null) options = new ArrayList<>();
     }
 
     @PreUpdate

@@ -3,7 +3,6 @@ package com.ticketpro.api.dto;
 import com.ticketpro.api.entity.FormField;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.util.ArrayList;
@@ -11,7 +10,6 @@ import java.util.List;
 
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class FormFieldDto {
     private Long id;
@@ -23,7 +21,11 @@ public class FormFieldDto {
     private Integer displayOrder;
     private String validationConfig;
     private String fieldConfig;
-    private List<FormFieldOptionDto> options = new ArrayList<>();
+    private List<FormFieldOptionDto> options;
+
+    public FormFieldDto() {
+        this.options = new ArrayList<>();
+    }
 
     public static FormFieldDto from(FormField field) {
         if (field == null) return null;

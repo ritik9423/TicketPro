@@ -3,7 +3,6 @@ package com.ticketpro.api.dto;
 import com.ticketpro.api.entity.FormTemplate;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
@@ -12,7 +11,6 @@ import java.util.List;
 
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class FormTemplateResponse {
     private Long id;
@@ -23,9 +21,13 @@ public class FormTemplateResponse {
     private String description;
     private Integer version;
     private String status;
-    private List<FormFieldDto> fields = new ArrayList<>();
+    private List<FormFieldDto> fields;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    public FormTemplateResponse() {
+        this.fields = new ArrayList<>();
+    }
 
     public static FormTemplateResponse from(FormTemplate template) {
         if (template == null) return null;

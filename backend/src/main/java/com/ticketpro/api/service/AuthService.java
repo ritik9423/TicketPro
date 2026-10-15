@@ -42,6 +42,8 @@ public class AuthService {
     private final EmailService emailService;
     private final LoginAttemptService loginAttemptService;
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper OBJECT_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
+
     private static final Pattern PASSWORD_PATTERN = 
             Pattern.compile("^(?=.*[0-9])(?=.*[a-zA-Z]).{8,}$");
 
@@ -161,7 +163,7 @@ public class AuthService {
         String customFieldsStr = company != null ? company.getCustomFields() : null;
         if (customFieldsStr != null && customFieldsStr.contains("logoUrl")) {
             try {
-                com.fasterxml.jackson.databind.JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(customFieldsStr);
+                com.fasterxml.jackson.databind.JsonNode node = OBJECT_MAPPER.readTree(customFieldsStr);
                 if (node.has("logoUrl")) logoUrl = node.get("logoUrl").asText("");
                 if (node.has("primaryColor")) primaryColor = node.get("primaryColor").asText("#4f46e5");
             } catch (Exception ignored) {}

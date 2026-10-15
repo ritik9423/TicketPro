@@ -3,16 +3,12 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "knowledge_base")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class KnowledgeBase {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -34,7 +30,7 @@ public class KnowledgeBase {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private KbStatus status = KbStatus.DRAFT;
+    private KbStatus status;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "created_by", nullable = false)
@@ -46,10 +42,17 @@ public class KnowledgeBase {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    public KnowledgeBase() {
+        this.status = KbStatus.DRAFT;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (status == null) {
+            status = KbStatus.DRAFT;
+        }
     }
 
     @PreUpdate
@@ -63,7 +66,7 @@ public class KnowledgeBase {
         this.title = title;
         this.content = content;
         this.category = category;
-        this.status = status;
+        this.status = status != null ? status : KbStatus.DRAFT;
         this.createdBy = createdBy;
     }
 }

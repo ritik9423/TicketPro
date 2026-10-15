@@ -3,7 +3,6 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
@@ -11,7 +10,6 @@ import java.time.LocalDateTime;
 @Table(name = "announcements")
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class Announcement {
     @Id
@@ -30,7 +28,7 @@ public class Announcement {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private AnnouncementStatus status = AnnouncementStatus.ACTIVE;
+    private AnnouncementStatus status;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "created_by", nullable = false)
@@ -39,9 +37,16 @@ public class Announcement {
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    public Announcement() {
+        this.status = AnnouncementStatus.ACTIVE;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = AnnouncementStatus.ACTIVE;
+        }
     }
 
     // Explicit seed constructor preservation
@@ -49,7 +54,7 @@ public class Announcement {
         this.company = company;
         this.title = title;
         this.message = message;
-        this.status = status;
+        this.status = status != null ? status : AnnouncementStatus.ACTIVE;
         this.createdBy = createdBy;
     }
 }

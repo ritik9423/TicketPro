@@ -3,16 +3,12 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "sla_policies")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class SlaPolicy {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,14 +33,21 @@ public class SlaPolicy {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private SlaStatus status = SlaStatus.ACTIVE;
+    private SlaStatus status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    public SlaPolicy() {
+        this.status = SlaStatus.ACTIVE;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = SlaStatus.ACTIVE;
+        }
     }
 
     // Explicit seed constructor preservation
@@ -54,6 +57,6 @@ public class SlaPolicy {
         this.priority = priority;
         this.responseTimeMinutes = responseTimeMinutes;
         this.resolutionTimeMinutes = resolutionTimeMinutes;
-        this.status = status;
+        this.status = status != null ? status : SlaStatus.ACTIVE;
     }
 }

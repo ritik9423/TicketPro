@@ -3,7 +3,6 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
@@ -11,7 +10,6 @@ import java.time.LocalDateTime;
 @Table(name = "categories")
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class Category {
     @Id
@@ -30,14 +28,21 @@ public class Category {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private CategoryStatus status = CategoryStatus.ACTIVE;
+    private CategoryStatus status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    public Category() {
+        this.status = CategoryStatus.ACTIVE;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (status == null) {
+            status = CategoryStatus.ACTIVE;
+        }
     }
 
     // Explicit seed constructor preservation
@@ -45,6 +50,6 @@ public class Category {
         this.company = company;
         this.name = name;
         this.description = description;
-        this.status = status;
+        this.status = status != null ? status : CategoryStatus.ACTIVE;
     }
 }

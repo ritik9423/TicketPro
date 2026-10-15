@@ -3,16 +3,12 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "departments")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class Department {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -32,7 +28,7 @@ public class Department {
     private String description;
 
     @Column(nullable = false, length = 20)
-    private String status = "ACTIVE";
+    private String status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -40,10 +36,17 @@ public class Department {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    public Department() {
+        this.status = "ACTIVE";
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (status == null) {
+            status = "ACTIVE";
+        }
     }
 
     @PreUpdate
@@ -56,6 +59,6 @@ public class Department {
         this.name = name;
         this.code = code;
         this.description = description;
-        this.status = status;
+        this.status = status != null ? status : "ACTIVE";
     }
 }

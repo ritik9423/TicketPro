@@ -111,10 +111,12 @@ public class LoginAttemptService {
         String cleanEmail = email.trim().toLowerCase();
         try {
             loginAttemptRepository.findByEmail(cleanEmail).ifPresent(attempt -> {
-                attempt.setFailedAttempts(0);
-                attempt.setLockedUntil(null);
-                loginAttemptRepository.save(attempt);
-                log.info("Reset login attempt counter for: {}", cleanEmail);
+                if (attempt.getFailedAttempts() > 0 || attempt.getLockedUntil() != null) {
+                    attempt.setFailedAttempts(0);
+                    attempt.setLockedUntil(null);
+                    loginAttemptRepository.save(attempt);
+                    log.info("Reset login attempt counter for: {}", cleanEmail);
+                }
             });
         } catch (Exception e) {
             log.warn("Could not reset login attempt counter for {}: {}", cleanEmail, e.getMessage());

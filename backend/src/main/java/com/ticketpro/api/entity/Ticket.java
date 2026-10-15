@@ -3,8 +3,6 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
@@ -22,8 +20,6 @@ import java.time.LocalDateTime;
 @org.hibernate.annotations.SQLRestriction("deleted = false")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Ticket {
     @Id
@@ -64,11 +60,11 @@ public class Ticket {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private Priority priority = Priority.MEDIUM;
+    private Priority priority;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
-    private TicketStatus status = TicketStatus.OPEN;
+    private TicketStatus status;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -92,7 +88,7 @@ public class Ticket {
     private LocalDateTime slaResolutionDeadline;
 
     @Column(name = "sla_breached", nullable = false)
-    private Boolean slaBreached = false;
+    private Boolean slaBreached;
 
     @Column(name = "satisfaction_rating")
     private Integer satisfactionRating;
@@ -107,7 +103,7 @@ public class Ticket {
     private LocalDateTime satisfactionRatedAt;
 
     @Column(name = "deleted", nullable = false)
-    private Boolean deleted = false;
+    private Boolean deleted;
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -118,17 +114,34 @@ public class Ticket {
 
     @OneToMany(mappedBy = "ticket", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @OrderBy("createdAt DESC")
-    private java.util.List<Attachment> attachments = new java.util.ArrayList<>();
+    private java.util.List<Attachment> attachments;
+
+    public Ticket() {
+        this.priority = Priority.MEDIUM;
+        this.status = TicketStatus.OPEN;
+        this.slaBreached = false;
+        this.deleted = false;
+        this.attachments = new java.util.ArrayList<>();
+    }
 
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (priority == null) {
+            priority = Priority.MEDIUM;
+        }
+        if (status == null) {
+            status = TicketStatus.OPEN;
+        }
         if (slaBreached == null) {
             slaBreached = false;
         }
         if (deleted == null) {
             deleted = false;
+        }
+        if (attachments == null) {
+            attachments = new java.util.ArrayList<>();
         }
     }
 

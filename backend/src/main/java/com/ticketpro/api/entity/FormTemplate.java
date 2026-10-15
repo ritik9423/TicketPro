@@ -1,9 +1,7 @@
 package com.ticketpro.api.entity;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
@@ -17,8 +15,6 @@ import java.util.List;
 })
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
 public class FormTemplate {
 
     @Id
@@ -40,10 +36,10 @@ public class FormTemplate {
     private String description;
 
     @Column(nullable = false)
-    private Integer version = 1;
+    private Integer version;
 
     @Column(nullable = false, length = 50)
-    private String status = "ACTIVE";
+    private String status;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = true)
@@ -51,7 +47,7 @@ public class FormTemplate {
 
     @OneToMany(mappedBy = "formTemplate", cascade = {CascadeType.PERSIST, CascadeType.MERGE}, fetch = FetchType.LAZY)
     @OrderBy("displayOrder ASC")
-    private List<FormField> fields = new ArrayList<>();
+    private List<FormField> fields;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -59,12 +55,19 @@ public class FormTemplate {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    public FormTemplate() {
+        this.version = 1;
+        this.status = "ACTIVE";
+        this.fields = new ArrayList<>();
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
         if (version == null) version = 1;
         if (status == null) status = "ACTIVE";
+        if (fields == null) fields = new ArrayList<>();
     }
 
     @PreUpdate

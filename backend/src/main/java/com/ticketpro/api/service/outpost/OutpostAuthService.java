@@ -85,6 +85,22 @@ public class OutpostAuthService {
         return status;
     }
 
+    private final java.util.concurrent.atomic.AtomicReference<CachedAppToken> cachedAppTokenRef = new java.util.concurrent.atomic.AtomicReference<>(null);
+
+    private static class CachedAppToken {
+        final String rawToken;
+        final long expiresAtMillis;
+
+        CachedAppToken(String rawToken, long ttlSeconds) {
+            this.rawToken = rawToken;
+            this.expiresAtMillis = System.currentTimeMillis() + (ttlSeconds * 1000L);
+        }
+
+        boolean isValid() {
+            return rawToken != null && System.currentTimeMillis() < (expiresAtMillis - 60_000L);
+        }
+    }
+
     /**
      * Obtains an Outpost access token for an authenticated TicketPro user and
      * associates the user's email with the token.
@@ -105,6 +121,17 @@ public class OutpostAuthService {
             return devToken;
         }
 
+        // 1. Check in-memory cached application token first (prevents redundant slow HTTP roundtrips)
+        CachedAppToken cachedApp = cachedAppTokenRef.get();
+        if (cachedApp != null && cachedApp.isValid()) {
+            long remainingSeconds = Math.max(60L, (cachedApp.expiresAtMillis - System.currentTimeMillis()) / 1000L);
+            String userSessionToken = "op_usr_" + b64Email + "_" + UUID.randomUUID().toString().replace("-", "");
+            associateUserToken(userSessionToken, cleanEmail, remainingSeconds);
+            activeTokenSessions.putIfAbsent(cachedApp.rawToken, new UserSession(cleanEmail, cachedApp.expiresAtMillis));
+            log.debug("Reusing cached Outpost app token for user {}. Session token issued instantly.", cleanEmail);
+            return userSessionToken;
+        }
+
         log.info("Requesting fresh access token from Outpost for user: {}", cleanEmail);
         try {
             OutpostTokenResponse response = outpostClient.fetchToken(
@@ -115,6 +142,8 @@ public class OutpostAuthService {
             if (response != null && response.getAccessToken() != null) {
                 String rawToken = response.getAccessToken();
                 long expiresIn = response.getExpiresIn() != null ? response.getExpiresIn() : 86400L;
+                cachedAppTokenRef.set(new CachedAppToken(rawToken, expiresIn));
+
                 // Mappls client_credentials returns a shared application-level token.
                 // To isolate individual user sessions and prevent cross-user token collision,
                 // generate a user-scoped session token that uniquely identifies this user session.

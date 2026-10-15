@@ -3,7 +3,6 @@ package com.ticketpro.api.entity;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
@@ -12,7 +11,6 @@ import lombok.Setter;
 })
 @Getter
 @Setter
-@NoArgsConstructor
 @AllArgsConstructor
 public class FormFieldOption {
 
@@ -31,5 +29,14 @@ public class FormFieldOption {
     private String value;
 
     @Column(name = "display_order", nullable = false)
-    private Integer displayOrder = 0;
+    private Integer displayOrder;
+
+    public FormFieldOption() {
+        this.displayOrder = 0;
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (displayOrder == null) displayOrder = 0;
+    }
 }
