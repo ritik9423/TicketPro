@@ -1,8 +1,17 @@
 package com.ticketpro.api.service;
 
+import com.ticketpro.api.dto.ActiveCompanyResponse;
 import com.ticketpro.api.dto.CompanyRegisterRequest;
+import com.ticketpro.api.dto.CompanyRegisterResponse;
 import com.ticketpro.api.dto.LoginRequest;
 import com.ticketpro.api.dto.LoginResponse;
+import com.ticketpro.api.dto.OtpResponse;
+import com.ticketpro.api.dto.ResetPasswordRequest;
+import com.ticketpro.api.dto.SendOtpRequest;
+import com.ticketpro.api.dto.UserRegisterRequest;
+import com.ticketpro.api.dto.UserRegisterResponse;
+import com.ticketpro.api.dto.VerifyOtpRequest;
+import com.ticketpro.api.dto.VerifyOtpResponse;
 import com.ticketpro.api.entity.Company;
 import com.ticketpro.api.entity.CompanyStatus;
 import com.ticketpro.api.entity.Role;
@@ -550,5 +559,91 @@ public class AuthService {
                 primaryColor,
                 customFieldsStr
         );
+    }
+
+    public CompanyRegisterResponse registerCompanyDto(CompanyRegisterRequest request) {
+        Company company = registerCompany(request);
+        return CompanyRegisterResponse.builder()
+                .message("Company and admin user registered successfully")
+                .companyId(company.getId())
+                .companyCode(company.getCompanyCode())
+                .build();
+    }
+
+    public UserRegisterResponse registerUserDto(UserRegisterRequest request) {
+        User user = registerUser(
+                request.getName(),
+                request.getEmail(),
+                request.getPassword(),
+                request.getPhone(),
+                request.getCompanyCode(),
+                request.getRole()
+        );
+        String message;
+        String status;
+        if (user.getRole() == Role.AGENT) {
+            message = "Agent registration submitted! Approval pending from Company Admin.";
+            status = "PENDING";
+        } else {
+            message = "User registered successfully! You can login immediately.";
+            status = "ACTIVE";
+        }
+        return UserRegisterResponse.builder()
+                .message(message)
+                .status(status)
+                .userId(user.getId())
+                .name(user.getName())
+                .build();
+    }
+
+    public OtpResponse sendPasswordResetOtpDto(SendOtpRequest request) {
+        Map<String, Object> map = sendPasswordResetOtp(request.getEmail());
+        return OtpResponse.builder()
+                .success(Boolean.TRUE.equals(map.get("success")))
+                .message((String) map.get("message"))
+                .expiresInMinutes((Integer) map.get("expiresInMinutes"))
+                .build();
+    }
+
+    public VerifyOtpResponse verifyPasswordResetOtpOnlyDto(VerifyOtpRequest request) {
+        Map<String, Object> map = verifyPasswordResetOtpOnly(request.getEmail(), request.getOtp());
+        return VerifyOtpResponse.builder()
+                .success(Boolean.TRUE.equals(map.get("success")))
+                .verified(Boolean.TRUE.equals(map.get("verified")))
+                .resetToken((String) map.get("resetToken"))
+                .message((String) map.get("message"))
+                .build();
+    }
+
+    public OtpResponse verifyPasswordResetOtpAndResetDto(ResetPasswordRequest request) {
+        Map<String, Object> map = verifyPasswordResetOtpAndReset(request.getEmail(), request.getOtp(), request.getNewPassword());
+        return OtpResponse.builder()
+                .success(Boolean.TRUE.equals(map.get("success")))
+                .message((String) map.get("message"))
+                .build();
+    }
+
+    public List<ActiveCompanyResponse> getActiveCompaniesDto() {
+        return companyRepository.findAll().stream()
+                .filter(c -> c.getStatus() == CompanyStatus.ACTIVE)
+                .map(c -> {
+                    String logoUrl = "";
+                    String primaryColor = "#4f46e5";
+                    if (c.getCustomFields() != null && c.getCustomFields().contains("logoUrl")) {
+                        try {
+                            com.fasterxml.jackson.databind.JsonNode node = OBJECT_MAPPER.readTree(c.getCustomFields());
+                            if (node.has("logoUrl")) logoUrl = node.get("logoUrl").asText("");
+                            if (node.has("primaryColor")) primaryColor = node.get("primaryColor").asText("#4f46e5");
+                        } catch (Exception ignored) {}
+                    }
+                    return ActiveCompanyResponse.builder()
+                            .id(c.getId())
+                            .name(c.getCompanyName())
+                            .code(c.getCompanyCode())
+                            .customFields(c.getCustomFields())
+                            .logoUrl(logoUrl)
+                            .primaryColor(primaryColor)
+                            .build();
+                }).toList();
     }
 }

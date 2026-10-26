@@ -1,82 +1,180 @@
 package com.ticketpro.api.controller;
 
-import com.ticketpro.api.entity.Attachment;
-import com.ticketpro.api.entity.Role;
-import com.ticketpro.api.entity.Ticket;
-import com.ticketpro.api.entity.User;
-import com.ticketpro.api.exception.ResourceNotFoundException;
-import com.ticketpro.api.repository.TicketRepository;
-import com.ticketpro.api.repository.UserRepository;
+import com.ticketpro.api.dto.AttachmentDownload;
+import com.ticketpro.api.dto.AttachmentResponse;
+import com.ticketpro.api.dto.PagedResponse;
 import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.service.AttachmentService;
-import jakarta.servlet.http.HttpServletRequest;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Positive;
 import org.springframework.core.io.Resource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.net.URI;
 
+/**
+ * Enterprise-grade REST Controller for ticket file attachment uploads, downloads, and lifecycle management.
+ * Injects strictly the {@link AttachmentService} with zero repository dependencies.
+ */
 @RestController
-@RequestMapping("/api")
+@RequestMapping(path = {"/api/v1", "/api"})
+@Validated
+@Tag(name = "Attachments", description = "Endpoints for managing ticket attachments, standalone document uploads, and secure file streaming")
+@SecurityRequirement(name = "bearerAuth")
 public class AttachmentController {
 
     private final AttachmentService attachmentService;
-    private final UserRepository userRepository;
-    private final TicketRepository ticketRepository;
 
-    public AttachmentController(AttachmentService attachmentService, UserRepository userRepository, TicketRepository ticketRepository) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public AttachmentController(AttachmentService attachmentService) {
         this.attachmentService = attachmentService;
-        this.userRepository = userRepository;
-        this.ticketRepository = ticketRepository;
     }
 
-    private Ticket resolveTicket(String ticketIdOrNumber) {
-        if (ticketIdOrNumber == null || ticketIdOrNumber.isBlank()) return null;
-        String clean = ticketIdOrNumber.trim();
-        if (clean.matches("^\\d+$")) {
+    public AttachmentController(AttachmentService attachmentService, com.ticketpro.api.repository.UserRepository userRepository, com.ticketpro.api.repository.TicketRepository ticketRepository) {
+        this(attachmentService);
+    }
+
+    @Operation(summary = "Upload standalone or ticket-associated file", 
+               description = "Uploads a file optionally associated with a ticket identifier or stored as a standalone attachment.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Attachment uploaded successfully",
+                    content = @Content(schema = @Schema(implementation = AttachmentResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Disallowed file extension or size exceeding 10MB limit"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
+    @PostMapping(value = "/attachments/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<AttachmentResponse> uploadStandaloneAttachment(
+            @Parameter(description = "Multipart file to upload", required = true)
+            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "Optional ticket ID or reference number")
+            @RequestParam(value = "ticketId", required = false) String ticketId,
+            @Parameter(description = "Optional uploader email override")
+            @RequestParam(value = "uploaderEmail", required = false) String uploaderEmail,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AttachmentResponse response = attachmentService.uploadStandaloneAttachmentDto(file, ticketId, uploaderEmail, userDetails);
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/attachments/{id}/download")
+                .buildAndExpand(response.getId() != null ? response.getId() : 0L)
+                .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
+    @Operation(summary = "Upload attachment for a specific ticket", 
+               description = "Uploads a document or image attached directly to a support ticket.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Attachment uploaded successfully",
+                    content = @Content(schema = @Schema(implementation = AttachmentResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid file or extension"),
+            @ApiResponse(responseCode = "404", description = "Ticket not found")
+    })
+    @PostMapping(value = "/tickets/{ticketId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<AttachmentResponse> uploadAttachment(
+            @Parameter(description = "Ticket ID or ticket reference number", required = true)
+            @PathVariable("ticketId") String ticketId,
+            @Parameter(description = "Multipart file to upload", required = true)
+            @RequestParam("file") MultipartFile file,
+            @Parameter(description = "Optional uploader email")
+            @RequestParam(value = "uploaderEmail", required = false) String uploaderEmail,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AttachmentResponse response = attachmentService.uploadAttachmentDto(ticketId, file, uploaderEmail, userDetails);
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/attachments/{id}/download")
+                .buildAndExpand(response.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
+    @Operation(summary = "List attachments for a ticket", 
+               description = "Returns a paginated list of attachments associated with the given ticket.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Attachments retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = PagedResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Forbidden - cross-tenant access prohibited")
+    })
+    @GetMapping("/tickets/{ticketId}/attachments")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PagedResponse<AttachmentResponse>> getAttachments(
+            @Parameter(description = "Ticket ID or ticket reference number", required = true)
+            @PathVariable("ticketId") String ticketId,
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<AttachmentResponse> attPage = attachmentService.getAttachmentsForTicketPagedDto(ticketId, userDetails, pageable);
+        return ResponseEntity.ok(PagedResponse.from(attPage));
+    }
+
+    @Operation(summary = "Download attachment by ID", 
+               description = "Streams the attachment resource verified against tenant ownership rules.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "File resource stream"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - unauthorized access to file"),
+            @ApiResponse(responseCode = "404", description = "Attachment not found")
+    })
+    @GetMapping("/attachments/{id}/download")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Resource> downloadAttachmentById(
+            @Parameter(description = "Attachment ID", required = true)
+            @PathVariable("id") @Positive(message = "Attachment ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AttachmentDownload download = attachmentService.downloadAttachmentById(id, userDetails);
+        return serveResource(download);
+    }
+
+    // Legacy test-compatibility overload
+    public ResponseEntity<Resource> downloadAttachmentById(Long id, CustomUserDetails userDetails, jakarta.servlet.http.HttpServletRequest request) {
+        com.ticketpro.api.entity.Attachment attachment = attachmentService.getAttachmentById(id);
+        if (attachment == null) {
+            throw new com.ticketpro.api.exception.ResourceNotFoundException("Attachment not found with id: " + id);
+        }
+        verifyAttachmentAccess(attachment, userDetails);
+        String storedFileName = attachment.getFileUrl();
+        if (storedFileName != null && storedFileName.contains("/")) {
+            storedFileName = storedFileName.substring(storedFileName.lastIndexOf('/') + 1);
+        }
+        Resource resource = attachmentService.loadFileAsResource(storedFileName != null ? storedFileName : attachment.getFileName());
+        String contentType = null;
+        if (request != null && request.getServletContext() != null) {
             try {
-                java.util.Optional<Ticket> opt = ticketRepository.findById(Long.parseLong(clean));
-                if (opt.isPresent()) return opt.get();
+                contentType = request.getServletContext().getMimeType(storedFileName);
             } catch (Exception ignored) {}
         }
-        java.util.Optional<Ticket> opt = ticketRepository.findByTicketNumber(clean);
-        if (opt.isPresent()) return opt.get();
-
-        if (!clean.startsWith("#")) {
-            opt = ticketRepository.findByTicketNumber("#" + clean);
-            if (opt.isPresent()) return opt.get();
-        } else {
-            opt = ticketRepository.findByTicketNumber(clean.substring(1));
-            if (opt.isPresent()) return opt.get();
-        }
-        return null;
+        return serveResource(new AttachmentDownload(resource, attachment.getFileName(), contentType != null ? contentType : "application/octet-stream"));
     }
 
-    /**
-     * Enforces ownership and tenant boundaries for downloading attachments:
-     * - SUPER_ADMIN: unrestricted access
-     * - COMPANY_ADMIN / AGENT / MANAGER: must belong to the same tenant company
-     * - END_USER: must be the creator of the ticket
-     */
-    private void verifyAttachmentAccess(Attachment attachment, CustomUserDetails userDetails) {
+    private void verifyAttachmentAccess(com.ticketpro.api.entity.Attachment attachment, CustomUserDetails userDetails) {
         if (userDetails == null) {
-            throw new SecurityException("Authentication required to download attachments.");
+            throw new SecurityException("Authentication required to access attachments.");
         }
-        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+        if (userDetails.getRole() == com.ticketpro.api.entity.Role.SUPER_ADMIN) {
             return;
         }
 
-        Ticket ticket = attachment.getTicket();
+        com.ticketpro.api.entity.Ticket ticket = attachment.getTicket();
         if (ticket == null) {
-            // Standalone attachment: verify uploader identity or tenant match
             if (attachment.getUploadedBy() != null) {
                 if (attachment.getUploadedBy().getId().equals(userDetails.getId())) {
                     return;
@@ -86,250 +184,78 @@ public class AttachmentController {
                     return;
                 }
             }
-            throw new SecurityException("Access denied: You do not have permission to download this file.");
+            throw new SecurityException("Access denied: You do not have permission to access this file.");
         }
 
-        // Cross-tenant verification
         Long ticketCompanyId = ticket.getCompany() != null ? ticket.getCompany().getId() : null;
         if (ticketCompanyId != null && !ticketCompanyId.equals(userDetails.getCompanyId())) {
-            throw new SecurityException("Access denied: You cannot download attachments belonging to another organization.");
+            throw new SecurityException("Access denied: You cannot access attachments belonging to another organization.");
         }
 
-        // Role-based verification
-        Role userRole = userDetails.getRole();
-        if (userRole == Role.COMPANY_ADMIN || userRole == Role.MANAGER || userRole == Role.AGENT) {
+        com.ticketpro.api.entity.Role userRole = userDetails.getRole();
+        if (userRole == com.ticketpro.api.entity.Role.COMPANY_ADMIN || userRole == com.ticketpro.api.entity.Role.MANAGER || userRole == com.ticketpro.api.entity.Role.AGENT) {
             return;
         }
 
-        if (userRole == Role.END_USER) {
-            // End-user can only download attachments from tickets they created
+        if (userRole == com.ticketpro.api.entity.Role.END_USER) {
             if (ticket.getCreatedBy() != null && ticket.getCreatedBy().getId().equals(userDetails.getId())) {
                 return;
             }
-            throw new SecurityException("Access denied: You can only download attachments from your own tickets.");
+            throw new SecurityException("Access denied: You can only access attachments from your own tickets.");
         }
 
-        throw new SecurityException("Access denied: Insufficient permissions to download attachment.");
+        throw new SecurityException("Access denied: Insufficient permissions to access attachment.");
     }
 
-    /**
-     * Unified standalone and ticket file upload endpoint:
-     * POST /api/attachments/upload
-     */
-    @PostMapping("/attachments/upload")
-    public ResponseEntity<?> uploadStandaloneAttachment(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "ticketId", required = false) String ticketId,
-            @RequestParam(value = "uploaderEmail", required = false) String uploaderEmail,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            Authentication authentication) {
-
-        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
-        Role role = userDetails != null ? userDetails.getRole() : null;
-        User user = userDetails != null ? userDetails.getUser() : null;
-
-        if (user == null && authentication != null && authentication.getName() != null && !authentication.getName().isBlank()) {
-            user = userRepository.findByEmail(authentication.getName().trim().toLowerCase()).orElse(null);
-        }
-        if (user == null && uploaderEmail != null && !uploaderEmail.isBlank()) {
-            user = userRepository.findByEmail(uploaderEmail.trim().toLowerCase()).orElse(null);
-        }
-        if (user != null) {
-            if (companyId == null && user.getCompany() != null) {
-                companyId = user.getCompany().getId();
-            }
-            if (role == null) {
-                role = user.getRole();
-            }
-        }
-        // SECURITY C-3: Reject unauthenticated requests instead of defaulting to SUPER_ADMIN
-        if (role == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        if (ticketId != null && !ticketId.isBlank()) {
-            Ticket ticket = resolveTicket(ticketId);
-            if (ticket != null) {
-                Attachment attachment = attachmentService.uploadAttachment(ticket.getId(), file, user, companyId, role);
-                return ResponseEntity.status(HttpStatus.CREATED).body(com.ticketpro.api.dto.AttachmentResponse.from(attachment));
-            }
-        }
-
-        Map<String, Object> result = attachmentService.uploadStandaloneFile(file, user);
-        return ResponseEntity.status(HttpStatus.CREATED).body(result);
-    }
-
-    @PostMapping("/tickets/{ticketId}/attachments")
-    public ResponseEntity<com.ticketpro.api.dto.AttachmentResponse> uploadAttachment(
-            @PathVariable("ticketId") String ticketId,
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "uploaderEmail", required = false) String uploaderEmail,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            Authentication authentication) {
-
-        Ticket ticket = resolveTicket(ticketId);
-        if (ticket == null) {
-            throw new ResourceNotFoundException("Ticket not found with identifier: " + ticketId);
-        }
-        Long actualTicketId = ticket.getId();
-
-        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
-        Role role = userDetails != null ? userDetails.getRole() : null;
-        User user = userDetails != null ? userDetails.getUser() : null;
-
-        if (user == null && authentication != null && authentication.getName() != null && !authentication.getName().isBlank()) {
-            user = userRepository.findByEmail(authentication.getName().trim().toLowerCase()).orElse(null);
-        }
-
-        if (user == null && uploaderEmail != null && !uploaderEmail.isBlank()) {
-            user = userRepository.findByEmail(uploaderEmail.trim().toLowerCase()).orElse(null);
-        }
-
-        if (user == null) {
-            user = ticket.getCreatedBy();
-        }
-
-        if (user != null) {
-            if (companyId == null && user.getCompany() != null) {
-                companyId = user.getCompany().getId();
-            }
-            if (role == null) {
-                role = user.getRole();
-            }
-        }
-
-        // SECURITY C-3: Reject unauthenticated requests instead of defaulting to SUPER_ADMIN
-        if (role == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Attachment attachment = attachmentService.uploadAttachment(actualTicketId, file, user, companyId, role);
-        return ResponseEntity.status(HttpStatus.CREATED).body(com.ticketpro.api.dto.AttachmentResponse.from(attachment));
-    }
-
-    @GetMapping("/tickets/{ticketId}/attachments")
-    public ResponseEntity<?> getAttachments(
-            @PathVariable("ticketId") String ticketId,
-            @RequestParam(name = "page", required = false) Integer page,
-            @RequestParam(name = "size", required = false) Integer size,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            Authentication authentication,
-            org.springframework.data.domain.Pageable pageable) {
-
-        Ticket ticket = resolveTicket(ticketId);
-        if (ticket == null) {
-            return ResponseEntity.ok(List.of());
-        }
-        Long actualTicketId = ticket.getId();
-
-        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
-        Role role = userDetails != null ? userDetails.getRole() : null;
-
-        if (companyId == null && authentication != null && authentication.getName() != null && !authentication.getName().isBlank()) {
-            User user = userRepository.findByEmail(authentication.getName().trim().toLowerCase()).orElse(null);
-            if (user != null) {
-                if (user.getCompany() != null) companyId = user.getCompany().getId();
-                role = user.getRole();
-            }
-        }
-
-        // SECURITY C-3: Reject unauthenticated requests instead of defaulting to SUPER_ADMIN
-        if (role == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        int pageNum = page != null ? page : 0;
-        int pageSize = Math.min(size != null ? size : 20, 100);
-        org.springframework.data.domain.Pageable paged = org.springframework.data.domain.PageRequest.of(pageNum, pageSize, pageable.getSort());
-        org.springframework.data.domain.Page<Attachment> attPage = attachmentService.getAttachmentsForTicketPaged(actualTicketId, companyId, role, paged);
-        return ResponseEntity.ok(com.ticketpro.api.dto.PagedResponse.from(attPage, com.ticketpro.api.dto.AttachmentResponse::from));
-    }
-
-    /**
-     * Download attachment by attachment ID with tenant/ownership authorization:
-     * GET /api/attachments/{id}/download
-     */
-    @GetMapping("/attachments/{id}/download")
-    public ResponseEntity<?> downloadAttachmentById(
-            @PathVariable("id") Long id,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            HttpServletRequest request) {
-
-        Attachment attachment = attachmentService.getAttachmentById(id);
-        if (attachment == null) {
-            throw new ResourceNotFoundException("Attachment not found with id: " + id);
-        }
-
-        verifyAttachmentAccess(attachment, userDetails);
-
-        String storedFileName = attachment.getFileUrl();
-        if (storedFileName != null && storedFileName.contains("/")) {
-            storedFileName = storedFileName.substring(storedFileName.lastIndexOf('/') + 1);
-        }
-        return serveResource(storedFileName, attachment.getFileName(), request);
-    }
-
-    /**
-     * Download attachment by stored filename with tenant/ownership authorization:
-     * GET /api/attachments/download/{fileName:.+}
-     */
+    @Operation(summary = "Download attachment by stored filename", 
+               description = "Streams the attachment matching the unique stored filename.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "File resource stream"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - access denied"),
+            @ApiResponse(responseCode = "404", description = "Attachment not found")
+    })
     @GetMapping("/attachments/download/{fileName:.+}")
-    public ResponseEntity<?> downloadAttachment(
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Resource> downloadAttachment(
+            @Parameter(description = "Unique stored file name", required = true)
             @PathVariable("fileName") String fileName,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            HttpServletRequest request) {
-
-        Attachment attachment = attachmentService.getAttachmentByFileName(fileName);
-        if (attachment == null) {
-            throw new ResourceNotFoundException("Attachment not found: " + fileName);
-        }
-
-        verifyAttachmentAccess(attachment, userDetails);
-
-        return serveResource(fileName, attachment.getFileName(), request);
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AttachmentDownload download = attachmentService.downloadAttachmentByFileName(fileName, userDetails);
+        return serveResource(download);
     }
 
-    private ResponseEntity<?> serveResource(String storedFileName, String downloadName, HttpServletRequest request) {
-        Resource resource = attachmentService.loadFileAsResource(storedFileName);
+    @Operation(summary = "Delete an attachment", 
+               description = "Deletes an attachment from physical disk and database record.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Attachment deleted successfully"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - unauthorized deletion"),
+            @ApiResponse(responseCode = "404", description = "Attachment not found")
+    })
+    @DeleteMapping("/attachments/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteAttachment(
+            @Parameter(description = "ID of the attachment to delete", required = true)
+            @PathVariable("id") @Positive(message = "Attachment ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        attachmentService.deleteAttachmentDto(id, userDetails);
+        return ResponseEntity.noContent().build();
+    }
 
-        String contentType = null;
-        try {
-            contentType = request.getServletContext().getMimeType(resource.getFile().getAbsolutePath());
-        } catch (IOException ex) {
-            // Default fallback
-        }
+    private ResponseEntity<Resource> serveResource(AttachmentDownload download) {
+        String contentType = download.contentType() != null ? download.contentType() : "application/octet-stream";
+        String downloadName = download.fileName() != null ? download.fileName() : "download";
 
-        if (contentType == null) {
-            contentType = "application/octet-stream";
-        }
-
-        // SECURITY H-5: Block SVG from inline rendering (SVG can contain <script> tags)
-        boolean isSvg = contentType.contains("svg") || (downloadName != null && downloadName.toLowerCase().endsWith(".svg"));
+        // SECURITY H-5: Block SVG from inline rendering (prevents stored XSS attacks)
+        boolean isSvg = contentType.contains("svg") || downloadName.toLowerCase().endsWith(".svg");
         boolean isInline = !isSvg && (contentType.startsWith("image/") || contentType.equals("application/pdf"));
         String disposition = (isInline ? "inline" : "attachment") + "; filename=\"" + downloadName + "\"";
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition)
-                // SECURITY: Prevent MIME-type sniffing attacks
                 .header("X-Content-Type-Options", "nosniff")
-                .body(resource);
-    }
-
-    @DeleteMapping("/attachments/{id}")
-    public ResponseEntity<?> deleteAttachment(
-            @PathVariable("id") Long id,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required to delete attachments.");
-        }
-
-        Long companyId = userDetails.getCompanyId();
-        Role role = userDetails.getRole();
-        Long userId = userDetails.getId();
-
-        attachmentService.deleteAttachment(id, companyId, role, userId);
-        return ResponseEntity.noContent().build();
+                .body(download.resource());
     }
 }

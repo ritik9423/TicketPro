@@ -26,6 +26,7 @@ public class EmailService {
     private JavaMailSender mailSender;
 
     @Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
     private FeedbackService feedbackService;
 
     @Value("${ticketpro.mail.from:TicketPro Support <support@ticketpro.com>}")

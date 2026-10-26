@@ -13,6 +13,7 @@ import com.ticketpro.api.entity.User;
 import com.ticketpro.api.repository.FeedbackRepository;
 import com.ticketpro.api.repository.TicketRepository;
 import com.ticketpro.api.repository.UserRepository;
+import com.ticketpro.api.security.CustomUserDetails;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -637,5 +638,36 @@ public class FeedbackService {
                 .tags(f.getTags())
                 .createdAt(f.getCreatedAt())
                 .build();
+    }
+
+    public CsatStatsResponse getCsatStatsDto(Long companyId, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required to access feedback statistics.");
+        }
+        if (userDetails.getRole() == Role.END_USER) {
+            Map<Integer, Long> emptyDist = new HashMap<>();
+            for (int i = 1; i <= 5; i++) emptyDist.put(i, 0L);
+            return CsatStatsResponse.builder()
+                    .averageRating(5.0)
+                    .totalResponses(0L)
+                    .satisfactionRatePercentage(100.0)
+                    .ratingDistribution(emptyDist)
+                    .recentFeedbacks(Collections.emptyList())
+                    .agentScorecards(Collections.emptyList())
+                    .build();
+        }
+        Long targetCompanyId = userDetails.getRole() == Role.SUPER_ADMIN ? companyId : userDetails.getCompanyId();
+        return getCsatStats(targetCompanyId);
+    }
+
+    public org.springframework.data.domain.Page<FeedbackResponse> getAllFeedbackPagedDto(Long companyId, CustomUserDetails userDetails, org.springframework.data.domain.Pageable pageable) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required to access feedback reviews.");
+        }
+        if (userDetails.getRole() == Role.END_USER) {
+            return org.springframework.data.domain.Page.empty(pageable);
+        }
+        Long targetCompanyId = userDetails.getRole() == Role.SUPER_ADMIN ? companyId : userDetails.getCompanyId();
+        return getFeedbackByCompanyPaged(targetCompanyId, pageable);
     }
 }

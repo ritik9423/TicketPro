@@ -106,4 +106,49 @@ public class KnowledgeBaseService {
         }
         kbRepository.delete(article);
     }
+
+    @Transactional(readOnly = true)
+    public com.ticketpro.api.dto.PagedResponse<com.ticketpro.api.dto.KnowledgeBaseResponse> getArticlesPaged(
+            com.ticketpro.api.security.CustomUserDetails userDetails,
+            org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.domain.Page<KnowledgeBase> kbPage;
+        if (userDetails == null || userDetails.getRole() == com.ticketpro.api.entity.Role.SUPER_ADMIN) {
+            kbPage = getAllArticlesPaged(pageable);
+        } else if (userDetails.getRole() == com.ticketpro.api.entity.Role.END_USER) {
+            kbPage = getPublishedArticlesByCompanyPaged(userDetails.getCompanyId(), pageable);
+        } else {
+            kbPage = getAllArticlesByCompanyPaged(userDetails.getCompanyId(), pageable);
+        }
+        return com.ticketpro.api.dto.PagedResponse.from(kbPage, com.ticketpro.api.dto.KnowledgeBaseResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public com.ticketpro.api.dto.KnowledgeBaseResponse getArticleByIdWithTenantCheck(Long id, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        KnowledgeBase article = getArticleById(id);
+        if (userDetails != null && userDetails.getRole() != com.ticketpro.api.entity.Role.SUPER_ADMIN && article.getCompany() != null && !article.getCompany().getId().equals(userDetails.getCompanyId())) {
+            throw new SecurityException("Access Denied: You cannot view articles belonging to another organization.");
+        }
+        return com.ticketpro.api.dto.KnowledgeBaseResponse.from(article);
+    }
+
+    @Transactional
+    public com.ticketpro.api.dto.KnowledgeBaseResponse createArticle(KnowledgeBaseRequest request, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Company company = (userDetails != null && userDetails.getUser() != null) ? userDetails.getUser().getCompany() : null;
+        User creator = userDetails != null ? userDetails.getUser() : null;
+        KnowledgeBase created = createArticle(request, company, creator);
+        return com.ticketpro.api.dto.KnowledgeBaseResponse.from(created);
+    }
+
+    @Transactional
+    public com.ticketpro.api.dto.KnowledgeBaseResponse updateArticle(Long id, KnowledgeBaseRequest request, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        KnowledgeBase updated = updateArticle(id, request, companyId);
+        return com.ticketpro.api.dto.KnowledgeBaseResponse.from(updated);
+    }
+
+    @Transactional
+    public void deleteArticle(Long id, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        deleteArticle(id, companyId);
+    }
 }

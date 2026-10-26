@@ -2,192 +2,208 @@ package com.ticketpro.api.controller;
 
 import com.ticketpro.api.dto.AnnouncementRequest;
 import com.ticketpro.api.dto.AnnouncementResponse;
-import com.ticketpro.api.entity.Company;
-import com.ticketpro.api.entity.Role;
-import com.ticketpro.api.entity.User;
-import com.ticketpro.api.repository.CompanyRepository;
 import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.service.AnnouncementService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.http.HttpStatus;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.util.List;
+import java.net.URI;
 
 /**
  * Enterprise Multi-Tenant Announcement Controller.
  * Manages broadcast bulletins, maintenance notices, and organizational alerts.
- * Features strict tenant segregation, DTO isolation, and optional server-side pagination.
+ * Strictly adheres to Single Responsibility Principle, delegating all domain
+ * and tenant-resolution logic to {@link AnnouncementService}.
  */
 @RestController
-@RequestMapping("/api/announcements")
+@RequestMapping(path = {"/api/v1/announcements", "/api/announcements"})
+@RequiredArgsConstructor
+@Validated
+@Tag(name = "Announcements", description = "Enterprise multi-tenant announcement management: broadcast bulletins, maintenance notices, and alerts.")
 public class AnnouncementController {
 
     private final AnnouncementService announcementService;
-    private final CompanyRepository companyRepository;
-
-    public AnnouncementController(AnnouncementService announcementService, CompanyRepository companyRepository) {
-        this.announcementService = announcementService;
-        this.companyRepository = companyRepository;
-    }
 
     /**
-     * Retrieve all announcements with strict tenant isolation and optional server-side pagination.
+     * Retrieve all announcements with tenant isolation and standard pagination.
      */
     @GetMapping
-    public ResponseEntity<?> getAnnouncements(
-            @RequestParam(name = "page", required = false) Integer page,
-            @RequestParam(name = "size", required = false) Integer size,
-            @RequestParam(name = "sortBy", defaultValue = "createdAt") String sortBy,
-            @RequestParam(name = "direction", defaultValue = "desc") String direction,
-            @RequestParam(name = "companyId", required = false) Long companyId,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Long effectiveCompanyId = resolveEffectiveCompanyId(userDetails, companyId);
-
-        if (page != null && size != null && size > 0) {
-            Sort sort = "asc".equalsIgnoreCase(direction) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-            int pageIndex = Math.max(0, page);
-            int pageSize = size;
-            Pageable pageable = PageRequest.of(pageIndex, pageSize, sort);
-            Page<AnnouncementResponse> pagedResult = announcementService.getAnnouncementsPaged(effectiveCompanyId, pageable);
-            return ResponseEntity.ok(pagedResult);
-        }
-
-        List<AnnouncementResponse> listResult = announcementService.getAnnouncementsList(effectiveCompanyId);
-        return ResponseEntity.ok(listResult);
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Get paginated announcements",
+            description = "Retrieves announcements strictly scoped to caller's tenant. Super Admins can optionally filter across tenants using companyId."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Announcements retrieved successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameters or pagination arguments", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Cross-tenant access denied", content = @Content)
+    })
+    public ResponseEntity<Page<AnnouncementResponse>> getAnnouncements(
+            @Parameter(description = "Optional company ID filter (Super Admins only)", example = "1")
+            @RequestParam(name = "companyId", required = false)
+            @Positive(message = "Company ID must be a positive integer") Long companyId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Page<AnnouncementResponse> announcements = announcementService.getAnnouncements(companyId, pageable, userDetails);
+        return ResponseEntity.ok(announcements);
     }
 
     /**
-     * Retrieve active announcements for alert banners with tenant isolation and optional pagination.
+     * Retrieve active announcements for alert banners with tenant isolation.
      */
     @GetMapping("/active")
-    public ResponseEntity<?> getActiveAnnouncements(
-            @RequestParam(name = "page", required = false) Integer page,
-            @RequestParam(name = "size", required = false) Integer size,
-            @RequestParam(name = "sortBy", defaultValue = "createdAt") String sortBy,
-            @RequestParam(name = "direction", defaultValue = "desc") String direction,
-            @RequestParam(name = "companyId", required = false) Long companyId,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Long effectiveCompanyId = resolveEffectiveCompanyId(userDetails, companyId);
-
-        if (page != null && size != null && size > 0) {
-            Sort sort = "asc".equalsIgnoreCase(direction) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-            int pageIndex = Math.max(0, page);
-            int pageSize = size;
-            Pageable pageable = PageRequest.of(pageIndex, pageSize, sort);
-            Page<AnnouncementResponse> pagedResult = announcementService.getActiveAnnouncementsPaged(effectiveCompanyId, pageable);
-            return ResponseEntity.ok(pagedResult);
-        }
-
-        List<AnnouncementResponse> listResult = announcementService.getActiveAnnouncementsList(effectiveCompanyId);
-        return ResponseEntity.ok(listResult);
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Get active announcements",
+            description = "Retrieves active broadcast bulletins and system alerts scoped to the caller's tenant."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Active announcements retrieved successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = Page.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request parameters", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Cross-tenant access denied", content = @Content)
+    })
+    public ResponseEntity<Page<AnnouncementResponse>> getActiveAnnouncements(
+            @Parameter(description = "Optional company ID filter (Super Admins only)", example = "1")
+            @RequestParam(name = "companyId", required = false)
+            @Positive(message = "Company ID must be a positive integer") Long companyId,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        Page<AnnouncementResponse> activeAnnouncements = announcementService.getActiveAnnouncements(companyId, pageable, userDetails);
+        return ResponseEntity.ok(activeAnnouncements);
     }
 
     /**
-     * Create a new announcement (Super Admin, Company Admin, Manager).
+     * Retrieve a specific announcement by ID with tenant verification.
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Get announcement by ID",
+            description = "Retrieves details of a specific announcement by its ID, enforcing tenant boundaries."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Announcement retrieved successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = AnnouncementResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid ID supplied", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Tenant boundary violation", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Announcement not found", content = @Content)
+    })
+    public ResponseEntity<AnnouncementResponse> getAnnouncementById(
+            @Parameter(description = "Unique ID of the announcement", required = true, example = "42")
+            @PathVariable("id")
+            @Positive(message = "Announcement ID must be a positive integer") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AnnouncementResponse announcement = announcementService.getAnnouncementById(id, userDetails);
+        return ResponseEntity.ok(announcement);
+    }
+
+    /**
+     * Create a new announcement. Restricted to Super Admin, Company Admin, and Manager.
      */
     @PostMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'MANAGER')")
+    @Operation(
+            summary = "Create an announcement",
+            description = "Publishes a new bulletin or organizational alert. Automatically associated with caller's company unless Super Admin."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "Announcement created successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = AnnouncementResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Validation failed for request body", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Insufficient permissions or unassociated tenant", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Target company not found", content = @Content)
+    })
     public ResponseEntity<AnnouncementResponse> createAnnouncement(
             @Valid @RequestBody AnnouncementRequest request,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        User creator = userDetails.getUser();
-        boolean isSuperAdmin = userDetails.getRole() == Role.SUPER_ADMIN;
-        Company targetCompany;
-
-        Long targetCompId = request.getTargetCompanyId();
-        if (isSuperAdmin && targetCompId != null) {
-            targetCompany = companyRepository.findById(targetCompId)
-                    .orElseThrow(() -> new IllegalArgumentException("Target company not found with id: " + targetCompId));
-        } else if (creator != null && creator.getCompany() != null) {
-            targetCompany = creator.getCompany();
-        } else if (isSuperAdmin) {
-            targetCompany = null; // Global system-wide announcement
-        } else {
-            throw new SecurityException("Tenant user must be associated with a valid company to create announcements.");
-        }
-
-        AnnouncementResponse created = announcementService.createAnnouncement(request, targetCompany, creator);
-        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AnnouncementResponse created = announcementService.createAnnouncement(request, userDetails);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(created.getId())
+                .toUri();
+        return ResponseEntity.created(location).body(created);
     }
 
     /**
      * Update an existing announcement with strict tenant verification.
-     * Clean error handling: SecurityException and IllegalArgumentException bubble up to GlobalExceptionHandler.
      */
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'MANAGER')")
+    @Operation(
+            summary = "Update an announcement",
+            description = "Modifies an existing announcement. Verifies that non-Super Admin callers belong to the owning organization."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Announcement updated successfully",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE, schema = @Schema(implementation = AnnouncementResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Validation failed or invalid ID", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Tenant boundary violation", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Announcement not found", content = @Content)
+    })
     public ResponseEntity<AnnouncementResponse> updateAnnouncement(
-            @PathVariable("id") Long id,
+            @Parameter(description = "Unique ID of the announcement to update", required = true, example = "42")
+            @PathVariable("id")
+            @Positive(message = "Announcement ID must be a positive integer") Long id,
             @Valid @RequestBody AnnouncementRequest request,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        boolean isSuperAdmin = userDetails.getRole() == Role.SUPER_ADMIN;
-        Long companyId = isSuperAdmin ? null : userDetails.getCompanyId();
-
-        AnnouncementResponse updated = announcementService.updateAnnouncement(id, request, companyId, isSuperAdmin);
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        AnnouncementResponse updated = announcementService.updateAnnouncement(id, request, userDetails);
         return ResponseEntity.ok(updated);
     }
 
     /**
-     * Delete an announcement with strict tenant verification.
+     * Delete an announcement permanently with strict tenant verification.
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'MANAGER')")
+    @Operation(
+            summary = "Delete an announcement",
+            description = "Deletes an announcement permanently. Ensures tenant boundary rules are strictly observed."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Announcement deleted successfully (no content)"),
+            @ApiResponse(responseCode = "400", description = "Invalid ID supplied", content = @Content),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Tenant boundary violation", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Announcement not found", content = @Content)
+    })
     public ResponseEntity<Void> deleteAnnouncement(
-            @PathVariable("id") Long id,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        boolean isSuperAdmin = userDetails.getRole() == Role.SUPER_ADMIN;
-        Long companyId = isSuperAdmin ? null : userDetails.getCompanyId();
-
-        announcementService.deleteAnnouncement(id, companyId, isSuperAdmin);
+            @Parameter(description = "Unique ID of the announcement to delete", required = true, example = "42")
+            @PathVariable("id")
+            @Positive(message = "Announcement ID must be a positive integer") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        announcementService.deleteAnnouncement(id, userDetails);
         return ResponseEntity.noContent().build();
-    }
-
-    /**
-     * Enforce strict tenant boundaries.
-     * Non-SUPER_ADMIN users can NEVER inspect announcements of other tenants.
-     */
-    private Long resolveEffectiveCompanyId(CustomUserDetails userDetails, Long requestedCompanyId) {
-        if (userDetails.getRole() == Role.SUPER_ADMIN) {
-            return requestedCompanyId;
-        }
-
-        Long tenantCompanyId = userDetails.getCompanyId();
-        if (tenantCompanyId == null) {
-            throw new SecurityException("Access denied: User account is not assigned to any active organization tenant.");
-        }
-        return tenantCompanyId;
     }
 }

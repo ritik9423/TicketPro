@@ -13,10 +13,12 @@ import com.ticketpro.api.entity.SlaStatus;
 import com.ticketpro.api.entity.Ticket;
 import com.ticketpro.api.entity.TicketStatus;
 import com.ticketpro.api.entity.User;
+import com.ticketpro.api.exception.ResourceNotFoundException;
 import com.ticketpro.api.repository.CompanyRepository;
 import com.ticketpro.api.repository.SlaPolicyRepository;
 import com.ticketpro.api.repository.TicketRepository;
 import com.ticketpro.api.repository.UserRepository;
+import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.specification.TicketSpecification;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1161,5 +1163,238 @@ public class TicketService {
             }
         }
         return "#" + prefix + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
+
+    @Transactional
+    public TicketResponse createPublicTicket(TicketRequest request) {
+        if (request.getCompanyCode() == null || request.getCompanyCode().trim().isBlank()) {
+            throw new IllegalArgumentException("companyCode is required for public ticket submission.");
+        }
+
+        Company company = companyRepository.findByCompanyCodeIgnoreCase(request.getCompanyCode().trim())
+                .orElseThrow(() -> new com.ticketpro.api.exception.ResourceNotFoundException("Company", "companyCode", request.getCompanyCode()));
+
+        if (company.getStatus() != com.ticketpro.api.entity.CompanyStatus.ACTIVE) {
+            throw new SecurityException("Company account is currently inactive or suspended.");
+        }
+
+        if (request.getCategoryId() != null) {
+            Category category = categoryService.getCategoryById(request.getCategoryId());
+            if (category.getCompany() == null || !category.getCompany().getId().equals(company.getId())) {
+                throw new IllegalArgumentException("Category does not belong to the requested company.");
+            }
+        }
+
+        User creator = userRepository.findFirstByCompanyIdOrderByIdAsc(company.getId())
+                .orElseThrow(() -> new IllegalStateException("No support user is configured for this company."));
+
+        Ticket createdTicket = createTicket(request, company, creator);
+        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && createdTicket.getId() != null)
+                ? formSubmissionValueRepository.findByTicketId(createdTicket.getId())
+                : null;
+        return TicketResponse.from(createdTicket, submissions);
+    }
+
+    public boolean canAccessTicket(Ticket ticket, CustomUserDetails userDetails) {
+        if (userDetails == null) return false;
+        Role role = userDetails.getRole();
+        if (role == Role.SUPER_ADMIN) {
+            return true;
+        }
+
+        if (ticket.getCompany() == null || userDetails.getCompanyId() == null
+                || !userDetails.getCompanyId().equals(ticket.getCompany().getId())) {
+            return false;
+        }
+
+        if (role == Role.COMPANY_ADMIN) {
+            return true;
+        }
+        if (role == Role.AGENT || role == Role.MANAGER) {
+            return ticket.getAssignedTo() != null && userDetails.getId().equals(ticket.getAssignedTo().getId());
+        }
+        if (role == Role.END_USER) {
+            return ticket.getCreatedBy() != null && userDetails.getId().equals(ticket.getCreatedBy().getId());
+        }
+
+        return false;
+    }
+
+    public TicketResponse getTicketResponseById(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        Ticket ticket = getTicketById(id);
+        if (ticket == null) {
+            throw new ResourceNotFoundException("Ticket not found with id: " + id);
+        }
+        if (!canAccessTicket(ticket, userDetails)) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied: You do not have permission to view this ticket.");
+        }
+        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && ticket.getId() != null)
+                ? formSubmissionValueRepository.findByTicketId(ticket.getId())
+                : null;
+        return TicketResponse.from(ticket, submissions);
+    }
+
+    @Transactional
+    public TicketResponse createTicketDto(TicketRequest request, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Valid authenticated user context is required to create a ticket.");
+        }
+
+        Company company = null;
+        User creator = userDetails.getUser();
+
+        if (creator != null) {
+            company = creator.getCompany();
+        }
+
+        if (company == null && request.getCompanyCode() != null && !request.getCompanyCode().isBlank()) {
+            if (userDetails.getRole() == Role.SUPER_ADMIN) {
+                company = companyRepository.findByCompanyCodeIgnoreCase(request.getCompanyCode().trim()).orElse(null);
+            }
+        }
+
+        if (company == null && creator != null && creator.getCompany() != null) {
+            company = creator.getCompany();
+        }
+
+        if (company == null) {
+            throw new IllegalArgumentException("Tenant company is required to create a ticket. Specify a valid companyCode for SUPER_ADMIN or log in with an assigned company.");
+        }
+
+        if (creator == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Valid authenticated user context is required to create a ticket.");
+        }
+
+        Ticket createdTicket = createTicket(request, company, creator);
+        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && createdTicket.getId() != null)
+                ? formSubmissionValueRepository.findByTicketId(createdTicket.getId())
+                : null;
+        return TicketResponse.from(createdTicket, submissions);
+    }
+
+    @Transactional
+    public TicketResponse updateTicketDto(Long id, TicketRequest request, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        Long companyId = userDetails.getCompanyId();
+        Role userRole = userDetails.getRole();
+        Long userId = userDetails.getId();
+        Ticket updatedTicket = updateTicket(id, request, companyId, userRole, userId);
+        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && updatedTicket.getId() != null)
+                ? formSubmissionValueRepository.findByTicketId(updatedTicket.getId())
+                : null;
+        return TicketResponse.from(updatedTicket, submissions);
+    }
+
+    @Transactional
+    public void deleteTicketDto(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        deleteTicket(id, userDetails.getCompanyId(), userDetails.getRole(), userDetails.getUser());
+    }
+
+    @Transactional
+    public TicketResponse restoreTicketDto(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        Ticket restored = restoreTicket(id, userDetails.getCompanyId(), userDetails.getRole(), userDetails.getUser());
+        return TicketResponse.from(restored);
+    }
+
+    public Page<TicketResponse> getTicketsPaged(CustomUserDetails userDetails, String companyCode, Pageable pageable) {
+        if (userDetails == null) {
+            return Page.empty(pageable);
+        }
+        Role role = userDetails.getRole();
+        Page<Ticket> ticketPage;
+
+        if (role == Role.SUPER_ADMIN) {
+            if (companyCode != null && !companyCode.isBlank() && !"ALL".equalsIgnoreCase(companyCode) && !"SUPERADMIN".equalsIgnoreCase(companyCode)) {
+                Company company = companyRepository.findByCompanyCode(companyCode).orElse(null);
+                if (company != null) {
+                    ticketPage = getTicketsByCompanyPaged(company.getId(), pageable);
+                    return ticketPage.map(TicketResponse::from);
+                }
+            }
+            ticketPage = getAllTicketsPaged(pageable);
+            return ticketPage.map(TicketResponse::from);
+        }
+
+        if (role == Role.END_USER) {
+            ticketPage = getTicketsByUserPaged(userDetails.getId(), pageable);
+            return ticketPage.map(TicketResponse::from);
+        }
+
+        Long companyId = userDetails.getCompanyId();
+        if (companyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
+            companyId = userDetails.getUser().getCompany().getId();
+        }
+
+        if (companyId == null) {
+            return Page.empty(pageable);
+        }
+
+        if (role == Role.COMPANY_ADMIN) {
+            ticketPage = getTicketsByCompanyPaged(companyId, pageable);
+        } else if (role == Role.AGENT || role == Role.MANAGER) {
+            ticketPage = getTicketsByAgentPaged(userDetails.getId(), pageable);
+        } else {
+            ticketPage = getTicketsByCompanyPaged(companyId, pageable);
+        }
+        return ticketPage.map(TicketResponse::from);
+    }
+
+    public Page<TicketResponse> searchTicketsPagedDto(
+            String search, List<TicketStatus> statuses, List<Priority> priorities, String department,
+            Long assignedToId, Long createdById, LocalDateTime startDate, LocalDateTime endDate,
+            Boolean slaBreached, String companyCode, CustomUserDetails userDetails, Pageable pageable) {
+        if (userDetails == null) {
+            return Page.empty(pageable);
+        }
+        Role role = userDetails.getRole();
+        Long targetCompanyId = null;
+        Long targetCreatedById = createdById;
+        Long targetAssignedToId = assignedToId;
+
+        if (role == Role.SUPER_ADMIN) {
+            if (companyCode != null && !companyCode.isBlank() && !"ALL".equalsIgnoreCase(companyCode) && !"SUPERADMIN".equalsIgnoreCase(companyCode)) {
+                Company company = companyRepository.findByCompanyCode(companyCode).orElse(null);
+                if (company != null) {
+                    targetCompanyId = company.getId();
+                }
+            }
+        } else if (role == Role.END_USER) {
+            targetCreatedById = userDetails.getId();
+            targetCompanyId = userDetails.getCompanyId();
+            if (targetCompanyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
+                targetCompanyId = userDetails.getUser().getCompany().getId();
+            }
+        } else {
+            targetCompanyId = userDetails.getCompanyId();
+            if (targetCompanyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
+                targetCompanyId = userDetails.getUser().getCompany().getId();
+            }
+            if (targetCompanyId == null) {
+                return Page.empty(pageable);
+            }
+            if (role == Role.AGENT || role == Role.MANAGER) {
+                if (targetAssignedToId == null) {
+                    targetAssignedToId = userDetails.getId();
+                }
+            }
+        }
+
+        Page<Ticket> result = searchTicketsPaged(
+                targetCompanyId, search, statuses, priorities, department,
+                targetAssignedToId, targetCreatedById, startDate, endDate, slaBreached, pageable
+        );
+
+        return result.map(TicketResponse::from);
     }
 }

@@ -1,12 +1,16 @@
 package com.ticketpro.api.service;
 
+import com.ticketpro.api.dto.AttachmentDownload;
+import com.ticketpro.api.dto.AttachmentResponse;
 import com.ticketpro.api.entity.Attachment;
 import com.ticketpro.api.entity.Role;
 import com.ticketpro.api.entity.Ticket;
 import com.ticketpro.api.entity.User;
+import com.ticketpro.api.exception.ResourceNotFoundException;
 import com.ticketpro.api.repository.AttachmentRepository;
 import com.ticketpro.api.repository.TicketRepository;
 import com.ticketpro.api.repository.UserRepository;
+import com.ticketpro.api.security.CustomUserDetails;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -361,5 +365,177 @@ public class AttachmentService {
                 log.warn("Could not record attachment deletion history: {}", e.getMessage());
             }
         }
+    }
+
+    public Ticket resolveTicket(String ticketIdOrNumber) {
+        if (ticketIdOrNumber == null || ticketIdOrNumber.isBlank()) return null;
+        String clean = ticketIdOrNumber.trim();
+        if (clean.matches("^\\d+$")) {
+            try {
+                java.util.Optional<Ticket> opt = ticketRepository.findById(Long.parseLong(clean));
+                if (opt.isPresent()) return opt.get();
+            } catch (Exception ignored) {}
+        }
+        java.util.Optional<Ticket> opt = ticketRepository.findByTicketNumber(clean);
+        if (opt.isPresent()) return opt.get();
+
+        if (!clean.startsWith("#")) {
+            opt = ticketRepository.findByTicketNumber("#" + clean);
+            if (opt.isPresent()) return opt.get();
+        } else {
+            opt = ticketRepository.findByTicketNumber(clean.substring(1));
+            if (opt.isPresent()) return opt.get();
+        }
+        return null;
+    }
+
+    public void verifyAttachmentAccess(Attachment attachment, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication required to access attachments.");
+        }
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            return;
+        }
+
+        Ticket ticket = attachment.getTicket();
+        if (ticket == null) {
+            if (attachment.getUploadedBy() != null) {
+                if (attachment.getUploadedBy().getId().equals(userDetails.getId())) {
+                    return;
+                }
+                if (attachment.getUploadedBy().getCompany() != null &&
+                        attachment.getUploadedBy().getCompany().getId().equals(userDetails.getCompanyId())) {
+                    return;
+                }
+            }
+            throw new SecurityException("Access denied: You do not have permission to access this file.");
+        }
+
+        Long ticketCompanyId = ticket.getCompany() != null ? ticket.getCompany().getId() : null;
+        if (ticketCompanyId != null && !ticketCompanyId.equals(userDetails.getCompanyId())) {
+            throw new SecurityException("Access denied: You cannot access attachments belonging to another organization.");
+        }
+
+        Role userRole = userDetails.getRole();
+        if (userRole == Role.COMPANY_ADMIN || userRole == Role.MANAGER || userRole == Role.AGENT) {
+            return;
+        }
+
+        if (userRole == Role.END_USER) {
+            if (ticket.getCreatedBy() != null && ticket.getCreatedBy().getId().equals(userDetails.getId())) {
+                return;
+            }
+            throw new SecurityException("Access denied: You can only access attachments from your own tickets.");
+        }
+
+        throw new SecurityException("Access denied: Insufficient permissions to access attachment.");
+    }
+
+    @Transactional
+    public AttachmentResponse uploadAttachmentDto(String ticketId, MultipartFile file, String uploaderEmail, CustomUserDetails userDetails) {
+        Ticket ticket = resolveTicket(ticketId);
+        if (ticket == null) {
+            throw new ResourceNotFoundException("Ticket not found with identifier: " + ticketId);
+        }
+
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        User user = userDetails != null ? userDetails.getUser() : null;
+
+        if (user == null && uploaderEmail != null && !uploaderEmail.isBlank()) {
+            user = userRepository.findByEmail(uploaderEmail.trim().toLowerCase()).orElse(null);
+        }
+        if (user == null) {
+            user = ticket.getCreatedBy();
+        }
+        if (user != null) {
+            if (companyId == null && user.getCompany() != null) companyId = user.getCompany().getId();
+            if (role == null) role = user.getRole();
+        }
+        if (role == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+
+        Attachment attachment = uploadAttachment(ticket.getId(), file, user, companyId, role);
+        return AttachmentResponse.from(attachment);
+    }
+
+    @Transactional
+    public AttachmentResponse uploadStandaloneAttachmentDto(MultipartFile file, String ticketId, String uploaderEmail, CustomUserDetails userDetails) {
+        if (ticketId != null && !ticketId.isBlank()) {
+            Ticket ticket = resolveTicket(ticketId);
+            if (ticket != null) {
+                return uploadAttachmentDto(ticketId, file, uploaderEmail, userDetails);
+            }
+        }
+
+        User user = userDetails != null ? userDetails.getUser() : null;
+        if (user == null && uploaderEmail != null && !uploaderEmail.isBlank()) {
+            user = userRepository.findByEmail(uploaderEmail.trim().toLowerCase()).orElse(null);
+        }
+        if (user == null && userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+
+        Map<String, Object> map = uploadStandaloneFile(file, user);
+        AttachmentResponse dto = new AttachmentResponse();
+        dto.setFileName((String) map.get("fileName"));
+        dto.setFileUrl((String) map.get("fileUrl"));
+        dto.setFileType((String) map.get("fileType"));
+        dto.setFileSize((Long) map.get("fileSize"));
+        dto.setCreatedAt(java.time.LocalDateTime.now());
+        if (user != null) {
+            dto.setUploadedById(user.getId());
+            dto.setUploadedByName(user.getName());
+        }
+        return dto;
+    }
+
+    public org.springframework.data.domain.Page<AttachmentResponse> getAttachmentsForTicketPagedDto(String ticketId, CustomUserDetails userDetails, org.springframework.data.domain.Pageable pageable) {
+        Ticket ticket = resolveTicket(ticketId);
+        if (ticket == null) {
+            return org.springframework.data.domain.Page.empty(pageable);
+        }
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        org.springframework.data.domain.Page<Attachment> page = getAttachmentsForTicketPaged(ticket.getId(), userDetails.getCompanyId(), userDetails.getRole(), pageable);
+        return page.map(AttachmentResponse::from);
+    }
+
+    public AttachmentDownload downloadAttachmentById(Long id, CustomUserDetails userDetails) {
+        Attachment attachment = getAttachmentById(id);
+        if (attachment == null) {
+            throw new ResourceNotFoundException("Attachment not found with id: " + id);
+        }
+        verifyAttachmentAccess(attachment, userDetails);
+
+        String storedFileName = attachment.getFileUrl();
+        if (storedFileName != null && storedFileName.contains("/")) {
+            storedFileName = storedFileName.substring(storedFileName.lastIndexOf('/') + 1);
+        }
+        Resource resource = loadFileAsResource(storedFileName);
+        String contentType = attachment.getFileType() != null ? attachment.getFileType() : "application/octet-stream";
+        return new AttachmentDownload(resource, attachment.getFileName(), contentType);
+    }
+
+    public AttachmentDownload downloadAttachmentByFileName(String fileName, CustomUserDetails userDetails) {
+        Attachment attachment = getAttachmentByFileName(fileName);
+        if (attachment == null) {
+            throw new ResourceNotFoundException("Attachment not found: " + fileName);
+        }
+        verifyAttachmentAccess(attachment, userDetails);
+
+        Resource resource = loadFileAsResource(fileName);
+        String contentType = attachment.getFileType() != null ? attachment.getFileType() : "application/octet-stream";
+        return new AttachmentDownload(resource, attachment.getFileName(), contentType);
+    }
+
+    @Transactional
+    public void deleteAttachmentDto(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required to delete attachments.");
+        }
+        deleteAttachment(id, userDetails.getCompanyId(), userDetails.getRole(), userDetails.getId());
     }
 }

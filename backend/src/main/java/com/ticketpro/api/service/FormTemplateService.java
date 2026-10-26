@@ -225,4 +225,47 @@ public class FormTemplateService {
             }
         }
     }
+
+    @Transactional(readOnly = true)
+    public PagedResponse<FormTemplateResponse> getFormTemplates(com.ticketpro.api.security.CustomUserDetails userDetails, Pageable pageable) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        return getFormTemplates(companyId, role, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public FormTemplateResponse getFormTemplateById(Long id, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        return getFormTemplateById(id, companyId, role);
+    }
+
+    @Transactional(readOnly = true)
+    public FormTemplateResponse getFormTemplateByCategoryId(Long categoryId, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        return getFormTemplateByCategoryId(categoryId, companyId, role);
+    }
+
+    @Transactional
+    public FormTemplateResponse createFormTemplate(FormTemplateRequest request, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        User creator = userDetails != null ? userDetails.getUser() : null;
+        return createFormTemplate(request, companyId, role, creator);
+    }
+
+    @Transactional
+    public FormTemplateResponse updateFormTemplate(Long id, FormTemplateRequest request, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        return updateFormTemplate(id, request, companyId, role);
+    }
+
+    @Transactional
+    public void deleteFormTemplate(Long id, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        deleteFormTemplate(id, companyId, role);
+    }
 }

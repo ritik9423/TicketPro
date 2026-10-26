@@ -37,6 +37,26 @@ public class AuditLogService {
         return auditLogRepository.findAllByOrderByCreatedAtDesc(pageable);
     }
 
+    @Transactional(readOnly = true)
+    public com.ticketpro.api.dto.PagedResponse<com.ticketpro.api.dto.AuditLogResponse> getAuditLogsPaged(
+            Long companyId,
+            com.ticketpro.api.security.CustomUserDetails userDetails,
+            org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.domain.Page<AuditLog> logPage;
+        if (userDetails != null && userDetails.getRole() == com.ticketpro.api.entity.Role.SUPER_ADMIN) {
+            if (companyId != null) {
+                logPage = getLogsByCompanyPaged(companyId, pageable);
+            } else {
+                logPage = getAllLogsPaged(pageable);
+            }
+        } else if (userDetails != null && userDetails.getCompanyId() != null) {
+            logPage = getLogsByCompanyPaged(userDetails.getCompanyId(), pageable);
+        } else {
+            logPage = org.springframework.data.domain.Page.empty(pageable);
+        }
+        return com.ticketpro.api.dto.PagedResponse.from(logPage, com.ticketpro.api.dto.AuditLogResponse::from);
+    }
+
     @Transactional
     public void log(User user, Company company, String action, String entityType, Long entityId, String description, String ipAddress) {
         String resolvedIp = ipAddress;

@@ -156,4 +156,27 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          Profile activated exclusively inside Eclipse JDT / VS Code Language Server via m2e.
+          Aligns IDE compliance level with the host Language Server (Java 25) so Lombok AST
+          constructors do not trigger ECJ's "Flexible Constructor Bodies" false-positive errors.
+          Standard Maven CLI and Docker continue compiling on Java 17 as defined above.
+        -->
+        <profile>
+            <id>eclipse-ide</id>
+            <activation>
+                <property>
+                    <name>m2e.version</name>
+                </property>
+            </activation>
+            <properties>
+                <java.version>25</java.version>
+                <maven.compiler.source>25</maven.compiler.source>
+                <maven.compiler.target>25</maven.compiler.target>
+            </properties>
+        </profile>
+    </profiles>
 </project>
+

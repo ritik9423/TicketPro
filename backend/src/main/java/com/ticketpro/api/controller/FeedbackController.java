@@ -3,61 +3,92 @@ package com.ticketpro.api.controller;
 import com.ticketpro.api.dto.CsatStatsResponse;
 import com.ticketpro.api.dto.FeedbackRequest;
 import com.ticketpro.api.dto.FeedbackResponse;
-import com.ticketpro.api.entity.Role;
+import com.ticketpro.api.dto.PagedResponse;
 import com.ticketpro.api.entity.User;
 import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.service.FeedbackService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URI;
 
+/**
+ * Enterprise-grade REST Controller for Customer Satisfaction (CSAT) reviews, analytics, and 1-click email surveys.
+ */
 @RestController
-@RequestMapping("/api")
+@RequestMapping(path = {"/api/v1", "/api"})
+@Validated
+@Tag(name = "Feedback", description = "Endpoints for CSAT rating submissions, email 1-click surveys, and team performance scorecards")
 public class FeedbackController {
 
     private final FeedbackService feedbackService;
+    private final String frontendUrl;
 
-    @Value("${ticketpro.frontend.url:http://localhost:5173}")
-    private String frontendUrl;
-
-    public FeedbackController(FeedbackService feedbackService) {
+    public FeedbackController(
+            FeedbackService feedbackService,
+            @Value("${ticketpro.frontend.url:http://localhost:5173}") String frontendUrl
+    ) {
         this.feedbackService = feedbackService;
+        this.frontendUrl = frontendUrl;
     }
 
-    /**
-     * Submit CSAT rating & feedback for a specific ticket (In-App Authenticated)
-     */
+    @Operation(summary = "Submit CSAT rating and feedback for a ticket", 
+               description = "Records customer feedback, star rating, and quality tags for a resolved support ticket.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Feedback recorded successfully",
+                    content = @Content(schema = @Schema(implementation = FeedbackResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid rating score or feedback payload"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - unauthorized access to ticket")
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/tickets/{ticketId}/feedback")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<FeedbackResponse> submitFeedback(
-            @PathVariable("ticketId") Long ticketId,
+            @Parameter(description = "ID of the support ticket", required = true)
+            @PathVariable("ticketId") @Positive(message = "Ticket ID must be positive") Long ticketId,
             @Valid @RequestBody FeedbackRequest request,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
         User currentUser = userDetails != null ? userDetails.getUser() : null;
         FeedbackResponse response = feedbackService.submitFeedback(ticketId, request, currentUser);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/tickets/{ticketId}/feedback")
+                .buildAndExpand(ticketId)
+                .toUri();
+        return ResponseEntity.created(location).body(response);
     }
 
-    /**
-     * Public 1-Click Email Rating Landing Endpoint.
-     * Records rating immediately and returns a responsive confirmation page.
-     */
+    @Operation(summary = "1-Click email rating submission (HTML landing page)", 
+               description = "Public landing endpoint executed when a customer clicks a star in an automated survey email.")
     @GetMapping(value = "/public/feedback/rate", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> rateFromEmail(
-            @RequestParam("ticketId") Long ticketId,
+            @RequestParam("ticketId") @Positive(message = "Ticket ID must be positive") Long ticketId,
             @RequestParam("rating") Integer rating,
             @RequestParam(value = "token", required = false) String token,
             @RequestParam(value = "comment", required = false) String comment,
-            @RequestParam(value = "tags", required = false) String tags) {
-
+            @RequestParam(value = "tags", required = false) String tags
+    ) {
         try {
             FeedbackResponse response = feedbackService.submitEmailRating(ticketId, rating, comment, tags, token);
             String html = generateRatingSuccessHtml(response, rating, token);
@@ -71,30 +102,33 @@ public class FeedbackController {
         }
     }
 
-    /**
-     * Public JSON endpoint for headless or frontend-based rating submissions
-     */
+    @Operation(summary = "Submit 1-click email rating via headless JSON API", 
+               description = "Headless API variant for external mobile or widget clients to record ratings.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Rating recorded successfully",
+                    content = @Content(schema = @Schema(implementation = FeedbackResponse.class)))
+    })
     @PostMapping("/public/feedback/rate")
     public ResponseEntity<FeedbackResponse> submitPublicRatingJson(
-            @RequestParam("ticketId") Long ticketId,
+            @RequestParam("ticketId") @Positive(message = "Ticket ID must be positive") Long ticketId,
             @RequestParam("rating") Integer rating,
             @RequestParam(value = "token", required = false) String token,
             @RequestParam(value = "comment", required = false) String comment,
-            @RequestParam(value = "tags", required = false) String tags) {
+            @RequestParam(value = "tags", required = false) String tags
+    ) {
         FeedbackResponse response = feedbackService.submitEmailRating(ticketId, rating, comment, tags, token);
         return ResponseEntity.ok(response);
     }
 
-    /**
-     * Updates optional comment and tags submitted via the email confirmation landing page.
-     */
+    @Operation(summary = "Submit optional comments from rating confirmation page", 
+               description = "Updates written comments and feedback tags from the browser landing view.")
     @PostMapping(value = "/public/feedback/comment", produces = MediaType.TEXT_HTML_VALUE)
     public ResponseEntity<String> submitEmailComment(
-            @RequestParam("ticketId") Long ticketId,
+            @RequestParam("ticketId") @Positive(message = "Ticket ID must be positive") Long ticketId,
             @RequestParam(value = "token", required = false) String token,
             @RequestParam(value = "comment", required = false) String comment,
-            @RequestParam(value = "tags", required = false) String tags) {
-
+            @RequestParam(value = "tags", required = false) String tags
+    ) {
         try {
             FeedbackResponse response = feedbackService.updateFeedbackComment(ticketId, comment, tags, token);
             String html = generateRatingSuccessHtml(response, response.getRating(), token, true);
@@ -104,13 +138,22 @@ public class FeedbackController {
         }
     }
 
-    /**
-     * Get submitted feedback for a specific ticket — requires authentication and tenant verification (H-3).
-     */
+    @Operation(summary = "Get feedback details for a specific ticket", 
+               description = "Retrieves submitted CSAT score and review for the target ticket.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Feedback found",
+                    content = @Content(schema = @Schema(implementation = FeedbackResponse.class))),
+            @ApiResponse(responseCode = "204", description = "No feedback submitted yet for this ticket"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/tickets/{ticketId}/feedback")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<FeedbackResponse> getFeedbackByTicket(
-            @PathVariable("ticketId") Long ticketId,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
+            @Parameter(description = "ID of the ticket", required = true)
+            @PathVariable("ticketId") @Positive(message = "Ticket ID must be positive") Long ticketId,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
         if (userDetails == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
@@ -122,63 +165,41 @@ public class FeedbackController {
         return ResponseEntity.ok(feedback);
     }
 
-    /**
-     * Get CSAT statistics (Avg Score, % satisfaction, star distribution)
-     */
+    @Operation(summary = "Get CSAT analytics and agent scorecard metrics", 
+               description = "Computes average satisfaction rate, star distribution, and agent performance badges.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "CSAT metrics retrieved",
+                    content = @Content(schema = @Schema(implementation = CsatStatsResponse.class)))
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/feedback/stats")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<CsatStatsResponse> getCsatStats(
+            @Parameter(description = "Optional company ID override for Super Admins")
             @RequestParam(value = "companyId", required = false) Long companyId,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required to access feedback statistics.");
-        }
-
-        if (userDetails.getRole() == Role.END_USER) {
-            Map<Integer, Long> emptyDist = new HashMap<>();
-            for (int i = 1; i <= 5; i++) emptyDist.put(i, 0L);
-            CsatStatsResponse defaultStats = CsatStatsResponse.builder()
-                    .averageRating(5.0)
-                    .totalResponses(0L)
-                    .satisfactionRatePercentage(100.0)
-                    .ratingDistribution(emptyDist)
-                    .recentFeedbacks(Collections.emptyList())
-                    .agentScorecards(Collections.emptyList())
-                    .build();
-            return ResponseEntity.ok(defaultStats);
-        }
-
-        Long targetCompanyId = userDetails.getRole() == Role.SUPER_ADMIN ? companyId : userDetails.getCompanyId();
-        CsatStatsResponse stats = feedbackService.getCsatStats(targetCompanyId);
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        CsatStatsResponse stats = feedbackService.getCsatStatsDto(companyId, userDetails);
         return ResponseEntity.ok(stats);
     }
 
-    /**
-     * Get list of recent CSAT reviews
-     */
+    @Operation(summary = "Get paginated CSAT reviews", 
+               description = "Returns paginated list of submitted customer feedback reviews.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Reviews retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = PagedResponse.class)))
+    })
+    @SecurityRequirement(name = "bearerAuth")
     @GetMapping("/feedback")
-    public ResponseEntity<?> getAllFeedback(
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PagedResponse<FeedbackResponse>> getAllFeedback(
+            @Parameter(description = "Optional company ID filter")
             @RequestParam(value = "companyId", required = false) Long companyId,
-            @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "size", required = false) Integer size,
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            org.springframework.data.domain.Pageable pageable) {
-
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required to access feedback reviews.");
-        }
-
-        if (userDetails.getRole() == Role.END_USER) {
-            return ResponseEntity.ok(Collections.emptyList());
-        }
-
-        Long targetCompanyId = userDetails.getRole() == Role.SUPER_ADMIN ? companyId : userDetails.getCompanyId();
-
-        int pageNum = page != null ? page : 0;
-        int pageSize = Math.min(size != null ? size : 20, 100);
-        org.springframework.data.domain.Pageable paged = org.springframework.data.domain.PageRequest.of(pageNum, pageSize, pageable.getSort());
-        org.springframework.data.domain.Page<FeedbackResponse> fbPage = feedbackService.getFeedbackByCompanyPaged(targetCompanyId, paged);
-        return ResponseEntity.ok(com.ticketpro.api.dto.PagedResponse.from(fbPage));
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<FeedbackResponse> fbPage = feedbackService.getAllFeedbackPagedDto(companyId, userDetails, pageable);
+        return ResponseEntity.ok(PagedResponse.from(fbPage));
     }
 
     private String generateRatingSuccessHtml(FeedbackResponse response, Integer rating, String token) {
@@ -533,9 +554,6 @@ public class FeedbackController {
             """.formatted(escapeHtml(title), escapeHtml(title), escapeHtml(message != null ? message : "Unable to process request."), frontendUrl);
     }
 
-    /**
-     * SECURITY C-8: HTML-escape user-controlled strings to prevent XSS in generated HTML pages.
-     */
     private String escapeHtml(String input) {
         if (input == null) return "";
         return input.replace("&", "&amp;").replace("<", "&lt;")

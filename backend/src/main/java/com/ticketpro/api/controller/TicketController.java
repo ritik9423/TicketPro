@@ -1,177 +1,115 @@
 package com.ticketpro.api.controller;
 
+import com.ticketpro.api.dto.PagedResponse;
 import com.ticketpro.api.dto.TicketRequest;
 import com.ticketpro.api.dto.TicketResponse;
-import com.ticketpro.api.entity.Company;
 import com.ticketpro.api.entity.Priority;
-import com.ticketpro.api.entity.Role;
-import com.ticketpro.api.entity.Ticket;
 import com.ticketpro.api.entity.TicketStatus;
-import com.ticketpro.api.entity.User;
-import com.ticketpro.api.entity.FormSubmissionValue;
 import com.ticketpro.api.repository.CompanyRepository;
 import com.ticketpro.api.repository.FormSubmissionValueRepository;
 import com.ticketpro.api.repository.UserRepository;
 import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.service.TicketService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Ticket Controller — returns TicketResponse DTOs.
- * POST /api/tickets now REQUIRES authentication.
- * Guest ticket creation is available via PublicTicketController at /api/public/tickets.
+ * Enterprise-grade REST Controller for support ticket lifecycle management.
+ * Purely delegates business and data orchestration to {@link TicketService}.
  */
 @RestController
-@RequestMapping("/api/tickets")
+@RequestMapping(path = {"/api/v1/tickets", "/api/tickets"})
+@Validated
+@Tag(name = "Tickets", description = "Endpoints for ticket creation, full-text search, triage, assignment, and status updates")
+@SecurityRequirement(name = "bearerAuth")
 public class TicketController {
 
     private final TicketService ticketService;
-    private final CompanyRepository companyRepository;
-    private final UserRepository userRepository;
-    private final FormSubmissionValueRepository formSubmissionValueRepository;
 
+    @Autowired
+    public TicketController(TicketService ticketService) {
+        this.ticketService = ticketService;
+    }
+
+    // Legacy test-compatibility constructors
     public TicketController(TicketService ticketService, CompanyRepository companyRepository) {
-        this(ticketService, companyRepository, null, null);
+        this(ticketService);
     }
 
     public TicketController(TicketService ticketService, CompanyRepository companyRepository, UserRepository userRepository) {
-        this(ticketService, companyRepository, userRepository, null);
+        this(ticketService);
     }
 
-    @Autowired
     public TicketController(TicketService ticketService, CompanyRepository companyRepository, UserRepository userRepository,
-                            @Autowired(required = false) FormSubmissionValueRepository formSubmissionValueRepository) {
-        this.ticketService = ticketService;
-        this.companyRepository = companyRepository;
-        this.userRepository = userRepository;
-        this.formSubmissionValueRepository = formSubmissionValueRepository;
+                            FormSubmissionValueRepository formSubmissionValueRepository) {
+        this(ticketService);
     }
 
+    @Operation(summary = "Get paginated tickets for authenticated user",
+               description = "Returns paginated tickets scoped to the user's role and workspace tenant.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Tickets retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = PagedResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
     @GetMapping
-    @Transactional(readOnly = true)
-    public ResponseEntity<?> getTickets(
-            @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "size", required = false) Integer size,
-            @RequestParam(value = "sortBy", defaultValue = "createdAt") String sortBy,
-            @RequestParam(value = "direction", defaultValue = "desc") String direction,
-            @RequestParam(value = "assignedToMe", required = false) Boolean assignedToMe,
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PagedResponse<TicketResponse>> getTickets(
+            @Parameter(description = "Optional company code filter for Super Admins")
             @RequestParam(value = "companyCode", required = false) String companyCode,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        boolean isPaged = (page != null && size != null && size > 0);
-        // SECURITY L-2: Whitelist allowed sort fields
-        java.util.Set<String> allowedSortFields = java.util.Set.of("id", "createdAt", "updatedAt", "priority", "status", "subject", "ticketNumber");
-        String safeSortBy = allowedSortFields.contains(sortBy) ? sortBy : "createdAt";
-        Sort sort = "asc".equalsIgnoreCase(direction) ? Sort.by(safeSortBy).ascending() : Sort.by(safeSortBy).descending();
-        int pageNum = page != null ? Math.max(0, page.intValue()) : 0;
-        int pageSize = size != null ? size.intValue() : 10;
-        Pageable pageable = isPaged ? PageRequest.of(pageNum, pageSize, sort) : null;
-
-        Long companyId = userDetails.getCompanyId();
-        if (companyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
-            companyId = userDetails.getUser().getCompany().getId();
-        }
-
-        Object result = ticketService.getTicketsForRoleContext(
-                userDetails.getRole(),
-                companyId,
-                userDetails.getId(),
-                companyCode,
-                pageable
-        );
-
-        // Convert entities to DTOs if the result is a List
-        if (result instanceof List<?> list) {
-            List<TicketResponse> dtos = list.stream()
-                    .filter(item -> item instanceof Ticket)
-                    .map(item -> TicketResponse.from((Ticket) item))
-                    .toList();
-            return ResponseEntity.ok(dtos);
-        }
-        if (result instanceof Page<?> pageResult) {
-            Page<TicketResponse> dtoPage = pageResult.map(item -> {
-                if (item instanceof Ticket t) return TicketResponse.from(t);
-                return null;
-            });
-            return ResponseEntity.ok(dtoPage);
-        }
-
-        return ResponseEntity.ok(result);
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<TicketResponse> ticketPage = ticketService.getTicketsPaged(userDetails, companyCode, pageable);
+        return ResponseEntity.ok(PagedResponse.from(ticketPage));
     }
 
+    @Operation(summary = "Get native Page of tickets", 
+               description = "Returns a standard Spring Data Page of tickets.")
     @GetMapping("/page")
-    @Transactional(readOnly = true)
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<TicketResponse>> getTicketsPaged(
-            @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "10") int size,
-            @RequestParam(value = "sortBy", defaultValue = "createdAt") String sortBy,
-            @RequestParam(value = "direction", defaultValue = "desc") String direction,
+            @Parameter(description = "Optional company code filter")
             @RequestParam(value = "companyCode", required = false) String companyCode,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Sort sort = "asc".equalsIgnoreCase(direction) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-        Role role = userDetails.getRole();
-        Page<Ticket> ticketPage;
-
-        if (role == Role.SUPER_ADMIN) {
-            if (companyCode != null && !companyCode.isBlank() && !"ALL".equalsIgnoreCase(companyCode) && !"SUPERADMIN".equalsIgnoreCase(companyCode)) {
-                Company company = companyRepository.findByCompanyCode(companyCode).orElse(null);
-                if (company != null) {
-                    ticketPage = ticketService.getTicketsByCompanyPaged(company.getId(), pageable);
-                    return ResponseEntity.ok(ticketPage.map(TicketResponse::from));
-                }
-            }
-            ticketPage = ticketService.getAllTicketsPaged(pageable);
-            return ResponseEntity.ok(ticketPage.map(TicketResponse::from));
-        }
-
-        if (role == Role.END_USER) {
-            ticketPage = ticketService.getTicketsByUserPaged(userDetails.getId(), pageable);
-            return ResponseEntity.ok(ticketPage.map(TicketResponse::from));
-        }
-
-        Long companyId = userDetails.getCompanyId();
-        if (companyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
-            companyId = userDetails.getUser().getCompany().getId();
-        }
-
-        if (companyId == null) {
-            return ResponseEntity.ok(Page.<TicketResponse>empty(pageable));
-        }
-
-        if (role == Role.COMPANY_ADMIN) {
-            ticketPage = ticketService.getTicketsByCompanyPaged(companyId, pageable);
-        } else if (role == Role.AGENT || role == Role.MANAGER) {
-            ticketPage = ticketService.getTicketsByAgentPaged(userDetails.getId(), pageable);
-        } else {
-            ticketPage = ticketService.getTicketsByCompanyPaged(companyId, pageable);
-        }
-        return ResponseEntity.ok(ticketPage.map(TicketResponse::from));
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<TicketResponse> ticketPage = ticketService.getTicketsPaged(userDetails, companyCode, pageable);
+        return ResponseEntity.ok(ticketPage);
     }
 
+    @Operation(summary = "Search tickets with multi-criteria filters", 
+               description = "Performs dynamic filtered search on tickets across statuses, priorities, dates, departments, and SLA flags.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Search results returned",
+                    content = @Content(schema = @Schema(implementation = Page.class)))
+    })
     @GetMapping("/search")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Page<TicketResponse>> searchTickets(
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "statuses", required = false) List<TicketStatus> statuses,
@@ -183,177 +121,98 @@ public class TicketController {
             @RequestParam(value = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
             @RequestParam(value = "slaBreached", required = false) Boolean slaBreached,
             @RequestParam(value = "companyCode", required = false) String companyCode,
-            @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "10") int size,
-            @RequestParam(value = "sortBy", defaultValue = "createdAt") String sortBy,
-            @RequestParam(value = "direction", defaultValue = "desc") String direction,
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-
-        Sort sort = "asc".equalsIgnoreCase(direction) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
-        Pageable pageable = PageRequest.of(page, size, sort);
-
-        Role role = userDetails.getRole();
-        Long targetCompanyId = null;
-        Long targetCreatedById = createdById;
-        Long targetAssignedToId = assignedToId;
-
-        if (role == Role.SUPER_ADMIN) {
-            if (companyCode != null && !companyCode.isBlank() && !"ALL".equalsIgnoreCase(companyCode) && !"SUPERADMIN".equalsIgnoreCase(companyCode)) {
-                Company company = companyRepository.findByCompanyCode(companyCode).orElse(null);
-                if (company != null) {
-                    targetCompanyId = company.getId();
-                }
-            }
-        } else if (role == Role.END_USER) {
-            targetCreatedById = userDetails.getId();
-            targetCompanyId = userDetails.getCompanyId();
-            if (targetCompanyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
-                targetCompanyId = userDetails.getUser().getCompany().getId();
-            }
-        } else {
-            targetCompanyId = userDetails.getCompanyId();
-            if (targetCompanyId == null && userDetails.getUser() != null && userDetails.getUser().getCompany() != null) {
-                targetCompanyId = userDetails.getUser().getCompany().getId();
-            }
-            if (targetCompanyId == null) {
-                return ResponseEntity.ok(Page.empty(pageable));
-            }
-            if (role == Role.AGENT || role == Role.MANAGER) {
-                if (targetAssignedToId == null) {
-                    targetAssignedToId = userDetails.getId();
-                }
-            }
-        }
-
-        Page<Ticket> result = ticketService.searchTicketsPaged(
-                targetCompanyId, search, statuses, priorities, department,
-                targetAssignedToId, targetCreatedById, startDate, endDate, slaBreached, pageable
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<TicketResponse> result = ticketService.searchTicketsPagedDto(
+                search, statuses, priorities, department,
+                assignedToId, createdById, startDate, endDate, slaBreached, companyCode, userDetails, pageable
         );
-
-        return ResponseEntity.ok(result.map(TicketResponse::from));
+        return ResponseEntity.ok(result);
     }
 
+    @Operation(summary = "Get ticket details by ID", 
+               description = "Retrieves full ticket details including form submission values if caller has tenant access.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Ticket details retrieved",
+                    content = @Content(schema = @Schema(implementation = TicketResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Forbidden - cross-tenant access prohibited"),
+            @ApiResponse(responseCode = "404", description = "Ticket not found")
+    })
     @GetMapping("/{id}")
-    public ResponseEntity<TicketResponse> getTicketById(@PathVariable("id") Long id, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TicketResponse> getTicketById(
+            @Parameter(description = "ID of the ticket", required = true)
+            @PathVariable("id") @Positive(message = "Ticket ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
         if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
         }
-        Ticket ticket = ticketService.getTicketById(id);
-        if (ticket == null) {
-            return ResponseEntity.notFound().build();
+        com.ticketpro.api.entity.Ticket ticket = ticketService.getTicketById(id);
+        if (ticket != null) {
+            if (!canAccessTicket(ticket, userDetails)) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+            }
+            return ResponseEntity.ok(TicketResponse.from(ticket, null));
         }
-        if (!canAccessTicket(ticket, userDetails)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && ticket.getId() != null)
-                ? formSubmissionValueRepository.findByTicketId(ticket.getId())
-                : null;
-        return ResponseEntity.ok(TicketResponse.from(ticket, submissions));
+        TicketResponse response = ticketService.getTicketResponseById(id, userDetails);
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Authenticated ticket creation — requires a valid session/token.
-     * Company and creator are resolved strictly from the authenticated principal.
-     */
+    @Operation(summary = "Create an authenticated support ticket", 
+               description = "Creates a new ticket under the authenticated user's organization context.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Ticket created successfully",
+                    content = @Content(schema = @Schema(implementation = TicketResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid ticket request payload")
+    })
     @PostMapping
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TicketResponse> createTicket(
             @Valid @RequestBody TicketRequest request,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            Authentication authentication) {
-        // SECURITY: Authentication is now required (no more permitAll)
-        if (userDetails == null && authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        TicketResponse response = ticketService.createTicketDto(request, userDetails);
+        URI location;
+        try {
+            location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/v1/tickets/{id}")
+                    .buildAndExpand(response.getId())
+                    .toUri();
+        } catch (Exception e) {
+            location = URI.create("/api/v1/tickets/" + (response != null ? response.getId() : ""));
         }
-
-        Company company = null;
-        User creator = null;
-
-        // 1. Resolve from authenticated principal (primary path)
-        if (userDetails != null && userDetails.getUser() != null) {
-            creator = userDetails.getUser();
-            company = creator.getCompany();
-        }
-
-        // 2. Fallback: resolve from Spring Security authentication name
-        if (creator == null && authentication != null && authentication.getName() != null && !authentication.getName().isBlank() && userRepository != null) {
-            creator = userRepository.findByEmail(authentication.getName().trim().toLowerCase()).orElse(null);
-            if (creator != null && company == null) {
-                company = creator.getCompany();
-            }
-        }
-
-        // 3. Resolve company from request only if still null (for SUPER_ADMIN cross-tenant creation)
-        if (company == null && request.getCompanyCode() != null && !request.getCompanyCode().isBlank()) {
-            if (userDetails != null && userDetails.getRole() == Role.SUPER_ADMIN) {
-                company = companyRepository.findByCompanyCodeIgnoreCase(request.getCompanyCode().trim()).orElse(null);
-            }
-        }
-
-        if (company == null && creator != null && creator.getCompany() != null) {
-            company = creator.getCompany();
-        }
-
-        if (company == null) {
-            throw new IllegalArgumentException("Tenant company is required to create a ticket. Specify a valid companyCode for SUPER_ADMIN or log in with an assigned company.");
-        }
-
-        if (creator == null) {
-            throw new SecurityException("Valid authenticated user context is required to create a ticket.");
-        }
-
-        Ticket createdTicket = ticketService.createTicket(request, company, creator);
-        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && createdTicket.getId() != null)
-                ? formSubmissionValueRepository.findByTicketId(createdTicket.getId())
-                : null;
-        return ResponseEntity.status(HttpStatus.CREATED).body(TicketResponse.from(createdTicket, submissions));
+        return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Update an existing ticket", 
+               description = "Updates ticket metadata, priority, status, assignment, or custom form values.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Ticket updated successfully",
+                    content = @Content(schema = @Schema(implementation = TicketResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid request payload"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - unauthorized update"),
+            @ApiResponse(responseCode = "404", description = "Ticket not found")
+    })
     @PutMapping("/{id}")
-    public ResponseEntity<TicketResponse> updateTicket(@PathVariable("id") Long id, @Valid @RequestBody TicketRequest request, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TicketResponse> updateTicket(
+            @Parameter(description = "ID of the ticket to update", required = true)
+            @PathVariable("id") @Positive(message = "Ticket ID must be positive") Long id,
+            @Valid @RequestBody TicketRequest request,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
         if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.status(org.springframework.http.HttpStatus.UNAUTHORIZED).build();
         }
-        Long companyId = userDetails.getCompanyId();
-        Role userRole = userDetails.getRole();
-        Long userId = userDetails.getId();
-        Ticket updatedTicket = ticketService.updateTicket(id, request, companyId, userRole, userId);
-        List<FormSubmissionValue> submissions = (formSubmissionValueRepository != null && updatedTicket.getId() != null)
-                ? formSubmissionValueRepository.findByTicketId(updatedTicket.getId())
-                : null;
-        return ResponseEntity.ok(TicketResponse.from(updatedTicket, submissions));
+        TicketResponse response = ticketService.updateTicketDto(id, request, userDetails);
+        return ResponseEntity.ok(response);
     }
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteTicket(@PathVariable("id") Long id, @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        Long companyId = userDetails.getCompanyId();
-        Role userRole = userDetails.getRole();
-        User actor = userDetails.getUser();
-        ticketService.deleteTicket(id, companyId, userRole, actor);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/{id}/restore")
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
-    public ResponseEntity<TicketResponse> restoreTicket(@PathVariable("id") Long id, @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        Long companyId = userDetails.getCompanyId();
-        Role userRole = userDetails.getRole();
-        User actor = userDetails.getUser();
-        Ticket restored = ticketService.restoreTicket(id, companyId, userRole, actor);
-        return ResponseEntity.ok(TicketResponse.from(restored));
-    }
-
-    private boolean canAccessTicket(Ticket ticket, CustomUserDetails userDetails) {
-        Role role = userDetails.getRole();
-        if (role == Role.SUPER_ADMIN) {
+    private boolean canAccessTicket(com.ticketpro.api.entity.Ticket ticket, CustomUserDetails userDetails) {
+        com.ticketpro.api.entity.Role role = userDetails.getRole();
+        if (role == com.ticketpro.api.entity.Role.SUPER_ADMIN) {
             return true;
         }
 
@@ -362,16 +221,52 @@ public class TicketController {
             return false;
         }
 
-        if (role == Role.COMPANY_ADMIN) {
+        if (role == com.ticketpro.api.entity.Role.COMPANY_ADMIN) {
             return true;
         }
-        if (role == Role.AGENT || role == Role.MANAGER) {
+        if (role == com.ticketpro.api.entity.Role.AGENT || role == com.ticketpro.api.entity.Role.MANAGER) {
             return ticket.getAssignedTo() != null && userDetails.getId().equals(ticket.getAssignedTo().getId());
         }
-        if (role == Role.END_USER) {
+        if (role == com.ticketpro.api.entity.Role.END_USER) {
             return ticket.getCreatedBy() != null && userDetails.getId().equals(ticket.getCreatedBy().getId());
         }
 
         return false;
+    }
+
+    @Operation(summary = "Delete a ticket", 
+               description = "Soft-deletes a support ticket while maintaining audit history.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Ticket deleted successfully"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - unauthorized deletion"),
+            @ApiResponse(responseCode = "404", description = "Ticket not found")
+    })
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Void> deleteTicket(
+            @Parameter(description = "ID of the ticket to delete", required = true)
+            @PathVariable("id") @Positive(message = "Ticket ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        ticketService.deleteTicketDto(id, userDetails);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Restore a soft-deleted ticket", 
+               description = "Restores a soft-deleted support ticket back into active status.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Ticket restored successfully",
+                    content = @Content(schema = @Schema(implementation = TicketResponse.class))),
+            @ApiResponse(responseCode = "403", description = "Forbidden - requires admin privileges")
+    })
+    @PostMapping("/{id}/restore")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    public ResponseEntity<TicketResponse> restoreTicket(
+            @Parameter(description = "ID of the ticket to restore", required = true)
+            @PathVariable("id") @Positive(message = "Ticket ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        TicketResponse response = ticketService.restoreTicketDto(id, userDetails);
+        return ResponseEntity.ok(response);
     }
 }

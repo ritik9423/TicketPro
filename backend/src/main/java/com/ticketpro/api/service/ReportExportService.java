@@ -58,6 +58,23 @@ public class ReportExportService {
         this.userRepository = userRepository;
     }
 
+    public Long resolveCompanyId(Long requestedCompanyId, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication is required to access reports.");
+        }
+        if (userDetails.getRole() == Role.END_USER) {
+            throw new SecurityException("End users are not authorized to view reports.");
+        }
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            return requestedCompanyId;
+        }
+        Long userCompanyId = userDetails.getCompanyId();
+        if (requestedCompanyId != null && !requestedCompanyId.equals(userCompanyId)) {
+            throw new SecurityException("Cross-tenant report access is denied.");
+        }
+        return userCompanyId;
+    }
+
     private List<Ticket> fetchScopedTickets(Long companyId, LocalDateTime fromDate, LocalDateTime toDate) {
         List<Ticket> list = companyId != null ? ticketRepository.findByCompanyId(companyId) : ticketRepository.findAll();
         return list.stream()

@@ -1,209 +1,172 @@
 package com.ticketpro.api.controller;
 
-import com.ticketpro.api.entity.Notification;
-import com.ticketpro.api.entity.Role;
+import com.ticketpro.api.dto.NotificationActionResponse;
+import com.ticketpro.api.dto.NotificationEmailRequest;
+import com.ticketpro.api.dto.NotificationEmailResponse;
+import com.ticketpro.api.dto.NotificationResponse;
+import com.ticketpro.api.dto.PagedResponse;
+import com.ticketpro.api.dto.UnreadCountResponse;
 import com.ticketpro.api.security.CustomUserDetails;
-import com.ticketpro.api.service.EmailService;
 import com.ticketpro.api.service.NotificationService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.net.URI;
 
+/**
+ * Enterprise-grade REST Controller for managing user notifications and system dispatch.
+ */
 @RestController
-@RequestMapping("/api/notifications")
+@RequestMapping(path = {"/api/v1/notifications", "/api/notifications"})
+@RequiredArgsConstructor
+@Validated
+@Tag(name = "Notifications", description = "Endpoints for managing user notifications, unread counts, and email dispatches")
+@SecurityRequirement(name = "bearerAuth")
 public class NotificationController {
 
-    private final EmailService emailService;
     private final NotificationService notificationService;
 
-    public NotificationController(EmailService emailService, NotificationService notificationService) {
-        this.emailService = emailService;
-        this.notificationService = notificationService;
-    }
-
-    // SECURITY C-7: Restrict email sending to SUPER_ADMIN and COMPANY_ADMIN only
+    @Operation(summary = "Send email notification and store in-app notification", 
+               description = "Dispatches a physical email via SMTP and stores a persistent in-app notification. Restricted to SUPER_ADMIN and COMPANY_ADMIN.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Notification dispatched and persisted successfully",
+                    content = @Content(schema = @Schema(implementation = NotificationEmailResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid notification parameters provided"),
+            @ApiResponse(responseCode = "403", description = "Forbidden - insufficient role permissions")
+    })
     @PostMapping("/email")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
-    public ResponseEntity<Map<String, Object>> sendEmailNotification(
-            @RequestBody Map<String, String> payload,
+    public ResponseEntity<NotificationEmailResponse> sendEmailNotification(
+            @Valid @RequestBody NotificationEmailRequest request,
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        String to = payload.get("to");
-        String subject = payload.get("subject");
-        String body = payload.get("body");
-        String message = payload.get("message");
-        String targetRole = payload.getOrDefault("targetRole", "ALL");
-        String link = payload.getOrDefault("link", "/tickets");
-        String type = payload.getOrDefault("type", "TICKET_EVENT");
+        NotificationEmailResponse response = notificationService.sendEmailNotification(request, userDetails);
+        URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/v1/notifications/{id}")
+                .buildAndExpand(response.getNotificationId())
+                .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
 
-        if (to == null || to.trim().isEmpty()) {
-            throw new IllegalArgumentException("Recipient email address is required.");
-        }
+    @Operation(summary = "Retrieve paginated notifications for the authenticated user",
+               description = "Returns a paginated list of scoped notifications based on the current user's role and organization.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Notifications retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = PagedResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
+    @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<PagedResponse<NotificationResponse>> getUserNotifications(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Page<NotificationResponse> notifPage = notificationService.getScopedNotificationsDtoPaged(userDetails, pageable);
+        return ResponseEntity.ok(PagedResponse.from(notifPage));
+    }
 
-        // Enforce tenant ID from authenticated context if user is not Super Admin
-        String tenantId;
-        if (userDetails != null && userDetails.getRole() != Role.SUPER_ADMIN && userDetails.getUser().getCompany() != null) {
-            tenantId = userDetails.getUser().getCompany().getCompanyCode();
-        } else {
-            tenantId = payload.getOrDefault("tenantId", "GLOBAL");
-        }
+    @Operation(summary = "Get unread notifications count", 
+               description = "Retrieves the total count of unread notifications scoped to the current user.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Unread count retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = UnreadCountResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
+    @GetMapping("/unread-count")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<UnreadCountResponse> getUnreadCount(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        UnreadCountResponse countResponse = notificationService.getScopedUnreadCountDto(userDetails);
+        return ResponseEntity.ok(countResponse);
+    }
 
-        // 1. Send physical email via Google SMTP (non-blocking fallback on delivery failure)
-        boolean sent = false;
-        try {
-            sent = emailService.sendHtmlEmail(to, subject, body);
-        } catch (Exception ignored) {
-            // Non-fatal: persist in-app notification even if SMTP server has transient failure
-        }
-
-        // 2. Store clean text notification in database permanently
-        String cleanMessage = (message != null && !message.isBlank()) 
-                ? message 
-                : NotificationService.cleanHtmlText(body != null ? body : "");
-
-        Notification savedNotification = notificationService.saveNotification(
-                to,
-                subject != null ? subject : "Ticket Notification",
-                cleanMessage,
-                type,
-                tenantId,
-                targetRole,
-                link
-        );
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("emailDelivered", sent);
-        response.put("recipient", to);
-        response.put("tenantId", tenantId);
-        response.put("status", sent ? "DELIVERED_VIA_SMTP" : "STORED_IN_APP");
-        response.put("notificationId", savedNotification.getId());
-
+    @Operation(summary = "Mark a notification as read", 
+               description = "Marks a specific notification as read by its unique identifier.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Notification marked as read successfully",
+                    content = @Content(schema = @Schema(implementation = NotificationActionResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid notification ID provided"),
+            @ApiResponse(responseCode = "403", description = "Access denied")
+    })
+    @RequestMapping(value = "/{id}/read", method = {RequestMethod.PUT, RequestMethod.PATCH})
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<NotificationActionResponse> markAsRead(
+            @Parameter(description = "ID of the notification", required = true)
+            @PathVariable("id") @Positive(message = "Notification ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        NotificationActionResponse response = notificationService.markAsReadDto(id, userDetails);
         return ResponseEntity.ok(response);
     }
 
-    @GetMapping
-    public ResponseEntity<?> getUserNotifications(
-            @RequestParam(value = "page", required = false) Integer page,
-            @RequestParam(value = "size", required = false) Integer size,
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            org.springframework.data.domain.Pageable pageable) {
-        if (userDetails == null) {
-            return ResponseEntity.ok(List.of());
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        int pageNum = page != null ? page : 0;
-        int pageSize = Math.min(size != null ? size : 20, 100);
-        org.springframework.data.domain.Pageable paged = org.springframework.data.domain.PageRequest.of(pageNum, pageSize, pageable.getSort());
-        org.springframework.data.domain.Page<Notification> notifPage = notificationService.getScopedNotificationsPaged(
-                userDetails.getUsername(),
-                companyCode,
-                userDetails.getRole(),
-                paged
-        );
-        return ResponseEntity.ok(com.ticketpro.api.dto.PagedResponse.from(notifPage, com.ticketpro.api.dto.NotificationResponse::from));
-    }
-
-    @GetMapping("/unread-count")
-    public ResponseEntity<Map<String, Object>> getUnreadCount(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.ok(Map.of("unreadCount", 0));
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        long count = notificationService.getScopedUnreadCount(
-                userDetails.getUsername(),
-                companyCode,
-                userDetails.getRole()
-        );
-
-        Map<String, Object> res = new HashMap<>();
-        res.put("email", userDetails.getUsername());
-        res.put("unreadCount", count);
-        return ResponseEntity.ok(res);
-    }
-
-    @RequestMapping(value = "/{id}/read", method = {RequestMethod.PUT, RequestMethod.PATCH})
-    public ResponseEntity<Map<String, Object>> markAsRead(
-            @PathVariable("id") Long id,
-            @AuthenticationPrincipal CustomUserDetails userDetails
-    ) {
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required.");
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        boolean updated = notificationService.markAsRead(id, userDetails.getUsername(), companyCode, userDetails.getRole());
-        Map<String, Object> res = new HashMap<>();
-        res.put("success", updated);
-        res.put("id", id);
-        return ResponseEntity.ok(res);
-    }
-
+    @Operation(summary = "Mark all notifications as read", 
+               description = "Marks all unread notifications scoped to the current user as read.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "All notifications marked as read",
+                    content = @Content(schema = @Schema(implementation = NotificationActionResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
     @RequestMapping(value = "/read-all", method = {RequestMethod.PUT, RequestMethod.PATCH})
-    public ResponseEntity<Map<String, Object>> markAllAsRead(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required.");
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        boolean updated = notificationService.markAllAsRead(userDetails.getUsername(), companyCode, userDetails.getRole());
-        Map<String, Object> res = new HashMap<>();
-        res.put("success", updated);
-        return ResponseEntity.ok(res);
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> deleteNotification(
-            @PathVariable("id") Long id,
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<NotificationActionResponse> markAllAsRead(
             @AuthenticationPrincipal CustomUserDetails userDetails
     ) {
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required.");
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        boolean deleted = notificationService.deleteNotification(id, userDetails.getUsername(), companyCode, userDetails.getRole());
-        Map<String, Object> res = new HashMap<>();
-        res.put("success", deleted);
-        res.put("id", id);
-        return ResponseEntity.ok(res);
+        NotificationActionResponse response = notificationService.markAllAsReadDto(userDetails);
+        return ResponseEntity.ok(response);
     }
 
+    @Operation(summary = "Delete a notification", 
+               description = "Deletes a specific notification belonging to the user's workspace.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Notification deleted successfully",
+                    content = @Content(schema = @Schema(implementation = NotificationActionResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Invalid notification ID"),
+            @ApiResponse(responseCode = "403", description = "Access denied")
+    })
+    @DeleteMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<NotificationActionResponse> deleteNotification(
+            @Parameter(description = "ID of the notification to delete", required = true)
+            @PathVariable("id") @Positive(message = "Notification ID must be positive") Long id,
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        NotificationActionResponse response = notificationService.deleteNotificationDto(id, userDetails);
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "Clear all notifications", 
+               description = "Permanently deletes all notifications scoped to the authenticated user.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "All notifications cleared successfully",
+                    content = @Content(schema = @Schema(implementation = NotificationActionResponse.class))),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - authentication required")
+    })
     @DeleteMapping("/clear-all")
-    public ResponseEntity<Map<String, Object>> clearAllNotifications(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            throw new SecurityException("Authentication required.");
-        }
-
-        String companyCode = userDetails.getUser().getCompany() != null 
-                ? userDetails.getUser().getCompany().getCompanyCode() 
-                : null;
-
-        boolean cleared = notificationService.clearAllNotifications(userDetails.getUsername(), companyCode, userDetails.getRole());
-        Map<String, Object> res = new HashMap<>();
-        res.put("success", cleared);
-        return ResponseEntity.ok(res);
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<NotificationActionResponse> clearAllNotifications(
+            @AuthenticationPrincipal CustomUserDetails userDetails
+    ) {
+        NotificationActionResponse response = notificationService.clearAllNotificationsDto(userDetails);
+        return ResponseEntity.ok(response);
     }
 }

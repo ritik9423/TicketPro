@@ -10,6 +10,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.ticketpro.api.dto.NotificationActionResponse;
+import com.ticketpro.api.dto.NotificationEmailRequest;
+import com.ticketpro.api.dto.NotificationEmailResponse;
+import com.ticketpro.api.dto.NotificationResponse;
+import com.ticketpro.api.dto.UnreadCountResponse;
+import com.ticketpro.api.security.CustomUserDetails;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +31,7 @@ import java.util.stream.Collectors;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final EmailService emailService;
 
     @Autowired(required = false)
     private SimpMessagingTemplate messagingTemplate;
@@ -31,7 +42,13 @@ public class NotificationService {
     private static final Pattern HTML_ANY_TAGS = Pattern.compile("<[^>]+>");
 
     public NotificationService(NotificationRepository notificationRepository) {
+        this(notificationRepository, null);
+    }
+
+    @Autowired
+    public NotificationService(NotificationRepository notificationRepository, @Autowired(required = false) @org.springframework.context.annotation.Lazy EmailService emailService) {
         this.notificationRepository = notificationRepository;
+        this.emailService = emailService;
     }
 
     public static String cleanHtmlText(String text) {
@@ -271,5 +288,133 @@ public class NotificationService {
             notificationRepository.deleteAll(list);
         }
         return true;
+    }
+
+    public NotificationEmailResponse sendEmailNotification(NotificationEmailRequest request, CustomUserDetails userDetails) {
+        String to = request.getTo();
+        String subject = request.getSubject();
+        String body = request.getBody();
+        String message = request.getMessage();
+        String targetRole = (request.getTargetRole() != null && !request.getTargetRole().isBlank()) ? request.getTargetRole() : "ALL";
+        String link = (request.getLink() != null && !request.getLink().isBlank()) ? request.getLink() : "/tickets";
+        String type = (request.getType() != null && !request.getType().isBlank()) ? request.getType() : "TICKET_EVENT";
+
+        if (to == null || to.trim().isEmpty()) {
+            throw new IllegalArgumentException("Recipient email address is required.");
+        }
+
+        String tenantId;
+        if (userDetails != null && userDetails.getRole() != Role.SUPER_ADMIN && userDetails.getUser().getCompany() != null) {
+            tenantId = userDetails.getUser().getCompany().getCompanyCode();
+        } else {
+            tenantId = (request.getTenantId() != null && !request.getTenantId().isBlank()) ? request.getTenantId() : "GLOBAL";
+        }
+
+        boolean sent = false;
+        if (emailService != null) {
+            try {
+                sent = emailService.sendHtmlEmail(to, subject, body);
+            } catch (Exception ignored) {
+                // Non-fatal: persist in-app notification even if SMTP server has transient failure
+            }
+        }
+
+        String cleanMessage = (message != null && !message.isBlank())
+                ? message
+                : cleanHtmlText(body != null ? body : "");
+
+        Notification saved = saveNotification(
+                to,
+                subject != null ? subject : "Ticket Notification",
+                cleanMessage,
+                type,
+                tenantId,
+                targetRole,
+                link
+        );
+
+        return NotificationEmailResponse.builder()
+                .success(true)
+                .emailDelivered(sent)
+                .recipient(to)
+                .tenantId(tenantId)
+                .status(sent ? "DELIVERED_VIA_SMTP" : "STORED_IN_APP")
+                .notificationId(saved.getId())
+                .build();
+    }
+
+    public Page<NotificationResponse> getScopedNotificationsDtoPaged(CustomUserDetails userDetails, Pageable pageable) {
+        if (userDetails == null) {
+            return Page.empty(pageable);
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        Page<Notification> paged = getScopedNotificationsPaged(
+                userDetails.getUsername(),
+                companyCode,
+                userDetails.getRole(),
+                pageable
+        );
+        return paged.map(NotificationResponse::from);
+    }
+
+    public UnreadCountResponse getScopedUnreadCountDto(CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            return new UnreadCountResponse("", 0L);
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        long count = getScopedUnreadCount(
+                userDetails.getUsername(),
+                companyCode,
+                userDetails.getRole()
+        );
+        return new UnreadCountResponse(userDetails.getUsername(), count);
+    }
+
+    public NotificationActionResponse markAsReadDto(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new AccessDeniedException("Authentication required.");
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        boolean updated = markAsRead(id, userDetails.getUsername(), companyCode, userDetails.getRole());
+        return new NotificationActionResponse(updated, id);
+    }
+
+    public NotificationActionResponse markAllAsReadDto(CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new AccessDeniedException("Authentication required.");
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        boolean updated = markAllAsRead(userDetails.getUsername(), companyCode, userDetails.getRole());
+        return new NotificationActionResponse(updated, null);
+    }
+
+    public NotificationActionResponse deleteNotificationDto(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new AccessDeniedException("Authentication required.");
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        boolean deleted = deleteNotification(id, userDetails.getUsername(), companyCode, userDetails.getRole());
+        return new NotificationActionResponse(deleted, id);
+    }
+
+    public NotificationActionResponse clearAllNotificationsDto(CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new AccessDeniedException("Authentication required.");
+        }
+        String companyCode = userDetails.getUser().getCompany() != null
+                ? userDetails.getUser().getCompany().getCompanyCode()
+                : null;
+        boolean cleared = clearAllNotifications(userDetails.getUsername(), companyCode, userDetails.getRole());
+        return new NotificationActionResponse(cleared, null);
     }
 }

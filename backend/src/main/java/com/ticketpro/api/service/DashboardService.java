@@ -42,6 +42,25 @@ public class DashboardService {
         this.feedbackRepository = feedbackRepository;
     }
 
+    public Map<String, Object> getDashboardStats(com.ticketpro.api.security.CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Dashboard statistics require an authenticated user identity.");
+        }
+        Role role = userDetails.getRole();
+        Long userId = userDetails.getId();
+        Long companyId = userDetails.getCompanyId();
+
+        if (role == Role.SUPER_ADMIN) {
+            return getSuperAdminDashboard();
+        } else if (role == Role.COMPANY_ADMIN || role == Role.MANAGER) {
+            return getCompanyAdminDashboard(companyId);
+        } else if (role == Role.AGENT) {
+            return getAgentDashboard(userId, companyId);
+        } else {
+            return getEndUserDashboard(userId, companyId);
+        }
+    }
+
     public Map<String, Object> getSuperAdminDashboard() {
         Map<String, Object> stats = new HashMap<>();
 

@@ -99,6 +99,30 @@ public class CommentService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public com.ticketpro.api.dto.PagedResponse<com.ticketpro.api.dto.CommentResponse> getCommentsForTicketPaged(
+            Long ticketId,
+            com.ticketpro.api.security.CustomUserDetails userDetails,
+            org.springframework.data.domain.Pageable pageable) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        Long userId = userDetails != null ? userDetails.getId() : null;
+        org.springframework.data.domain.Page<Comment> page = getCommentsForTicketPaged(ticketId, companyId, role, userId, pageable);
+        return com.ticketpro.api.dto.PagedResponse.from(page, com.ticketpro.api.dto.CommentResponse::from);
+    }
+
+    @Transactional
+    public com.ticketpro.api.dto.CommentResponse addComment(
+            Long ticketId,
+            CommentRequest request,
+            com.ticketpro.api.security.CustomUserDetails userDetails) {
+        Long companyId = userDetails != null ? userDetails.getCompanyId() : null;
+        Role role = userDetails != null ? userDetails.getRole() : null;
+        User user = userDetails != null ? userDetails.getUser() : null;
+        Comment comment = addComment(ticketId, request, companyId, role, user);
+        return com.ticketpro.api.dto.CommentResponse.from(comment);
+    }
+
     @Transactional
     public Comment addComment(Long ticketId, CommentRequest request, Long companyId, Role userRole, User user) {
         Ticket ticket = ticketService.getTicketById(ticketId);

@@ -1,6 +1,8 @@
 package com.ticketpro.api.service;
 
 import com.ticketpro.api.dto.CompanyRegisterRequest;
+import com.ticketpro.api.dto.CompanyResponse;
+import com.ticketpro.api.dto.CompanyUpdateRequest;
 import com.ticketpro.api.entity.*;
 import com.ticketpro.api.repository.*;
 import lombok.extern.slf4j.Slf4j;
@@ -337,5 +339,98 @@ public class CompanyService {
         }
 
         return savedCompany;
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Map<String, Object> getBillingHistory(com.ticketpro.api.security.CustomUserDetails userDetails) {
+        java.util.Map<String, Object> response = new java.util.HashMap<>();
+        response.put("billing_status", "MOCK_DATA");
+        response.put("notice", "Billing gateway (Stripe/Razorpay) is not yet integrated. These are placeholder invoices derived from company metadata.");
+
+        java.util.List<java.util.Map<String, Object>> invoices = new java.util.ArrayList<>();
+        java.util.List<Company> companies = java.util.Collections.emptyList();
+
+        if (userDetails != null) {
+            boolean isSuperAdmin = userDetails.getRole() == Role.SUPER_ADMIN;
+            if (isSuperAdmin) {
+                companies = getAllCompanies();
+            } else if (userDetails.getCompanyId() != null) {
+                Company c = getCompanyById(userDetails.getCompanyId());
+                companies = (c != null) ? java.util.List.of(c) : java.util.Collections.emptyList();
+            }
+        }
+
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy");
+
+        if (companies != null) {
+            for (Company comp : companies) {
+                if (comp == null || comp.getId() == null) continue;
+                java.util.Map<String, Object> inv = new java.util.HashMap<>();
+                long compId = comp.getId();
+                inv.put("id", "INV-2026-" + String.format("%04d", compId));
+                inv.put("company", comp.getCompanyName() != null && !comp.getCompanyName().isBlank() ? comp.getCompanyName() : "Enterprise Client");
+                inv.put("companyCode", comp.getCompanyCode() != null ? comp.getCompanyCode() : "TENANT");
+                inv.put("plan", "Enterprise Scale");
+                inv.put("amount", "$499.00");
+                inv.put("date", comp.getCreatedAt() != null ? comp.getCreatedAt().format(formatter) : "N/A");
+                inv.put("status", comp.getStatus() != null && "ACTIVE".equalsIgnoreCase(comp.getStatus().name()) ? "Paid" : "Pending");
+                inv.put("paymentMethod", "Not configured — billing gateway pending");
+                inv.put("mock", true);
+                invoices.add(inv);
+            }
+        }
+
+        response.put("invoices", invoices);
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<CompanyResponse> getCompanies(com.ticketpro.api.security.CustomUserDetails userDetails) {
+        if (userDetails != null && userDetails.getRole() != Role.SUPER_ADMIN) {
+            Long companyId = userDetails.getCompanyId();
+            if (companyId != null) {
+                Company company = getCompanyById(companyId);
+                return company != null ? List.of(CompanyResponse.from(company)) : java.util.Collections.emptyList();
+            }
+            return java.util.Collections.emptyList();
+        }
+        return getAllCompanies().stream().map(CompanyResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CompanyResponse getCompanyByIdWithCheck(Long id, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication is required.");
+        }
+        if (userDetails.getRole() != Role.SUPER_ADMIN) {
+            if (userDetails.getCompanyId() == null || !userDetails.getCompanyId().equals(id)) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied: You do not have permission to view this organization.");
+            }
+        }
+        Company company = getCompanyById(id);
+        if (company == null) {
+            throw new com.ticketpro.api.exception.ResourceNotFoundException("Company", id);
+        }
+        return CompanyResponse.from(company);
+    }
+
+    @Transactional
+    public CompanyResponse updateCompany(Long id, CompanyUpdateRequest request, com.ticketpro.api.security.CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication is required.");
+        }
+        if (request.getStatus() != null && userDetails.getRole() != Role.SUPER_ADMIN) {
+            throw new SecurityException("Only Super Admin can change company status.");
+        }
+        Long targetId;
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            targetId = id;
+        } else {
+            if (userDetails.getCompanyId() == null || !userDetails.getCompanyId().equals(id)) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied: You cannot update another organization's profile.");
+            }
+            targetId = userDetails.getCompanyId();
+        }
+        return CompanyResponse.from(updateCompany(targetId, request));
     }
 }

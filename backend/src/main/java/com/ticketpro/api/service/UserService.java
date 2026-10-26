@@ -2,11 +2,14 @@ package com.ticketpro.api.service;
 
 import com.ticketpro.api.config.OutpostProperties;
 import com.ticketpro.api.dto.UserRequest;
+import com.ticketpro.api.dto.UserResponse;
 import com.ticketpro.api.dto.outpost.AnchorUserRequest;
 import com.ticketpro.api.entity.Comment;
 import com.ticketpro.api.entity.Company;
 import com.ticketpro.api.entity.Role;
 import com.ticketpro.api.entity.Ticket;
+import com.ticketpro.api.exception.ResourceNotFoundException;
+import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.entity.User;
 import com.ticketpro.api.entity.UserStatus;
 import com.ticketpro.api.repository.CommentRepository;
@@ -280,5 +283,95 @@ public class UserService {
         }
         user.setStatus(UserStatus.ACTIVE);
         return userRepository.save(user);
+    }
+
+    public Page<UserResponse> getUsersPaged(CustomUserDetails userDetails, Pageable pageable) {
+        if (userDetails == null) {
+            return Page.empty(pageable);
+        }
+        Page<User> userPage;
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            userPage = getAllUsersPaged(pageable);
+        } else {
+            userPage = getUsersByCompanyPaged(userDetails.getCompanyId(), pageable);
+        }
+        return userPage.map(UserResponse::from);
+    }
+
+    public List<UserResponse> getAgents(CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            return List.of();
+        }
+        List<User> agents;
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            agents = getAllUsers().stream().filter(u -> u.getRole() == Role.AGENT).toList();
+        } else {
+            agents = getAgentsByCompany(userDetails.getCompanyId());
+        }
+        return agents.stream().map(UserResponse::from).toList();
+    }
+
+    @Transactional
+    public UserResponse createUser(UserRequest request, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        Company company;
+        if (userDetails.getRole() == Role.SUPER_ADMIN) {
+            if (request.getCompanyId() != null && request.getCompanyId() > 0) {
+                if (companyRepository == null) {
+                    throw new IllegalStateException("Company repository is unavailable");
+                }
+                company = companyRepository.findById(request.getCompanyId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Company not found with id: " + request.getCompanyId()));
+            } else {
+                company = null;
+            }
+        } else {
+            company = userDetails.getUser().getCompany();
+        }
+
+        User user = createUser(request, company);
+        return UserResponse.from(user);
+    }
+
+    @Transactional
+    public UserResponse createTenantUser(Long companyId, UserRequest request) {
+        if (companyRepository == null) {
+            throw new IllegalStateException("Company repository is unavailable");
+        }
+        Company company = companyRepository.findById(companyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Company not found with id: " + companyId));
+        User user = createUser(request, company);
+        return UserResponse.from(user);
+    }
+
+    @Transactional
+    public UserResponse updateUser(Long id, UserRequest request, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        User updated = updateUser(id, request, userDetails.getCompanyId(), userDetails.getRole(), userDetails.getId());
+        return UserResponse.from(updated);
+    }
+
+    @Transactional
+    public void deleteUser(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        if (userDetails.getId() != null && userDetails.getId().equals(id)) {
+            throw new IllegalArgumentException("You cannot delete your own logged-in account.");
+        }
+        deleteUser(id, userDetails.getCompanyId(), userDetails.getRole());
+    }
+
+    @Transactional
+    public UserResponse restoreUser(Long id, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new org.springframework.security.access.AccessDeniedException("Authentication required.");
+        }
+        User restored = restoreUser(id, userDetails.getCompanyId(), userDetails.getRole());
+        return UserResponse.from(restored);
     }
 }

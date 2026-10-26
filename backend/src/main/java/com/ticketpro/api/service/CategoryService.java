@@ -100,6 +100,22 @@ public class CategoryService {
         return categories;
     }
 
+    @Transactional(readOnly = true)
+    public List<com.ticketpro.api.dto.CategoryResponse> getPublicCategoriesByCompanyCode(String companyCode) {
+        if (companyCode == null || companyCode.isBlank()) {
+            throw new IllegalArgumentException("Company code is required.");
+        }
+        Company company = companyRepository.findByCompanyCode(companyCode.trim().toUpperCase())
+                .orElseThrow(() -> new com.ticketpro.api.exception.ResourceNotFoundException("Company not found with code: " + companyCode));
+        if (company.getStatus() != com.ticketpro.api.entity.CompanyStatus.ACTIVE) {
+            throw new SecurityException("Company is inactive or suspended.");
+        }
+        return categoryRepository.findByCompanyIdAndStatus(company.getId(), CategoryStatus.ACTIVE)
+                .stream()
+                .map(com.ticketpro.api.dto.CategoryResponse::from)
+                .toList();
+    }
+
     private List<Category> seedDefaultCategoriesForCompany(Company company) {
         List<Category> seeded = new ArrayList<>();
         String[] defaultNames = {"Technical Support", "Billing & Invoices", "User Access & Roles", "General Operations"};
@@ -268,5 +284,73 @@ public class CategoryService {
             category.setStatus(CategoryStatus.INACTIVE);
             categoryRepository.save(category);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public List<com.ticketpro.api.dto.CategoryResponse> getCategories(Long companyId, String companyCode, CustomUserDetails userDetails) {
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null) {
+            return List.of();
+        }
+        return getCategoriesByCompany(targetCompany.getId()).stream().map(com.ticketpro.api.dto.CategoryResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public com.ticketpro.api.dto.PagedResponse<com.ticketpro.api.dto.CategoryResponse> getCategoriesPaged(Long companyId, String companyCode, CustomUserDetails userDetails, org.springframework.data.domain.Pageable pageable) {
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null) {
+            return com.ticketpro.api.dto.PagedResponse.from(org.springframework.data.domain.Page.empty(pageable), com.ticketpro.api.dto.CategoryResponse::from);
+        }
+        org.springframework.data.domain.Page<Category> categoryPage = getCategoriesByCompanyPaged(targetCompany.getId(), pageable);
+        return com.ticketpro.api.dto.PagedResponse.from(categoryPage, com.ticketpro.api.dto.CategoryResponse::from);
+    }
+
+    @Transactional(readOnly = true)
+    public List<com.ticketpro.api.dto.CategoryResponse> getActiveCategories(Long companyId, String companyCode, CustomUserDetails userDetails) {
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null) {
+            return List.of();
+        }
+        return getActiveCategoriesByCompany(targetCompany.getId()).stream().map(com.ticketpro.api.dto.CategoryResponse::from).toList();
+    }
+
+    @Transactional
+    public com.ticketpro.api.dto.CategoryResponse createCategory(com.ticketpro.api.dto.CategoryRequest request, Long companyId, String companyCode, CustomUserDetails userDetails) {
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null) {
+            throw new IllegalArgumentException("Target company could not be resolved.");
+        }
+        Category category = new Category();
+        category.setName(request.getName());
+        category.setDescription(request.getDescription());
+        category.setStatus(request.getStatus() != null ? request.getStatus() : CategoryStatus.ACTIVE);
+        Category created = createCategory(category, targetCompany);
+        return com.ticketpro.api.dto.CategoryResponse.from(created);
+    }
+
+    @Transactional
+    public com.ticketpro.api.dto.CategoryResponse updateCategory(Long id, com.ticketpro.api.dto.CategoryRequest request, Long companyId, String companyCode, CustomUserDetails userDetails) {
+        boolean isSuperAdmin = (userDetails != null && userDetails.getRole() == com.ticketpro.api.entity.Role.SUPER_ADMIN);
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null && !isSuperAdmin) {
+            throw new SecurityException("Target company could not be resolved.");
+        }
+        Category categoryDetails = new Category();
+        categoryDetails.setName(request.getName());
+        categoryDetails.setDescription(request.getDescription());
+        categoryDetails.setStatus(request.getStatus());
+        Category updated = updateCategory(id, categoryDetails, targetCompany, isSuperAdmin);
+        return com.ticketpro.api.dto.CategoryResponse.from(updated);
+    }
+
+    @Transactional
+    public void deleteCategory(Long id, Long companyId, String companyCode, CustomUserDetails userDetails) {
+        boolean isSuperAdmin = (userDetails != null && userDetails.getRole() == com.ticketpro.api.entity.Role.SUPER_ADMIN);
+        Company targetCompany = resolveCompany(companyId, companyCode, userDetails);
+        if (targetCompany == null && !isSuperAdmin) {
+            throw new SecurityException("Target company could not be resolved.");
+        }
+        Long targetCompanyId = targetCompany != null ? targetCompany.getId() : null;
+        deleteCategory(id, targetCompanyId, isSuperAdmin);
     }
 }

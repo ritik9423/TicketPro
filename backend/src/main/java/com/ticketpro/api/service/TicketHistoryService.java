@@ -63,6 +63,14 @@ public class TicketHistoryService {
         return PagedResponse.from(page, TicketHistoryResponse::from);
     }
 
+    @Transactional(readOnly = true)
+    public PagedResponse<TicketHistoryResponse> getHistoryByTicketPaged(Long ticketId, com.ticketpro.api.security.CustomUserDetails userDetails, Pageable pageable) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication is required to view ticket history.");
+        }
+        return getHistoryByTicketPaged(ticketId, userDetails.getCompanyId(), userDetails.getRole(), userDetails.getId(), pageable);
+    }
+
     private void validateAccess(Long ticketId, Long callerCompanyId, Role callerRole, Long callerUserId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new IllegalArgumentException("Ticket not found with id: " + ticketId));

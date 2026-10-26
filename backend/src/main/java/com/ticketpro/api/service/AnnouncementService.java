@@ -7,6 +7,11 @@ import com.ticketpro.api.entity.AnnouncementStatus;
 import com.ticketpro.api.entity.Company;
 import com.ticketpro.api.entity.User;
 import com.ticketpro.api.repository.AnnouncementRepository;
+import com.ticketpro.api.entity.Role;
+import com.ticketpro.api.exception.ResourceNotFoundException;
+import com.ticketpro.api.repository.CompanyRepository;
+import com.ticketpro.api.security.CustomUserDetails;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -16,13 +21,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class AnnouncementService {
 
     private final AnnouncementRepository announcementRepository;
-
-    public AnnouncementService(AnnouncementRepository announcementRepository) {
-        this.announcementRepository = announcementRepository;
-    }
+    private final CompanyRepository companyRepository;
 
     // ==========================================
     // PAGINATED DTO QUERIES (FOR PRODUCTION API)
@@ -172,5 +175,104 @@ public class AnnouncementService {
     @Transactional
     public void deleteAnnouncement(Long id, Long companyId) {
         deleteAnnouncement(id, companyId, false);
+    }
+
+    // ==========================================
+    // ENTERPRISE DELEGATION FOR CONTROLLER
+    // ==========================================
+
+    @Transactional(readOnly = true)
+    public Page<AnnouncementResponse> getAnnouncements(Long requestedCompanyId, Pageable pageable, CustomUserDetails userDetails) {
+        Long effectiveCompanyId = resolveEffectiveCompanyId(userDetails, requestedCompanyId);
+        if (effectiveCompanyId == null) {
+            return announcementRepository.findAllByOrderByCreatedAtDesc(pageable)
+                    .map(AnnouncementResponse::fromEntity);
+        }
+        return announcementRepository.findByCompanyIdOrderByCreatedAtDesc(effectiveCompanyId, pageable)
+                .map(AnnouncementResponse::fromEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AnnouncementResponse> getActiveAnnouncements(Long requestedCompanyId, Pageable pageable, CustomUserDetails userDetails) {
+        Long effectiveCompanyId = resolveEffectiveCompanyId(userDetails, requestedCompanyId);
+        if (effectiveCompanyId == null) {
+            return announcementRepository.findByStatusOrderByCreatedAtDesc(AnnouncementStatus.ACTIVE, pageable)
+                    .map(AnnouncementResponse::fromEntity);
+        }
+        return announcementRepository.findByCompanyIdAndStatusOrderByCreatedAtDesc(effectiveCompanyId, AnnouncementStatus.ACTIVE, pageable)
+                .map(AnnouncementResponse::fromEntity);
+    }
+
+    @Transactional(readOnly = true)
+    public AnnouncementResponse getAnnouncementById(Long id, CustomUserDetails userDetails) {
+        Announcement announcement = announcementRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Announcement not found with id: " + id));
+        validateTenantAccess(announcement, userDetails);
+        return AnnouncementResponse.fromEntity(announcement);
+    }
+
+    @Transactional
+    public AnnouncementResponse createAnnouncement(AnnouncementRequest request, CustomUserDetails userDetails) {
+        User creator = userDetails != null ? userDetails.getUser() : null;
+        boolean isSuperAdmin = userDetails != null && userDetails.getRole() == Role.SUPER_ADMIN;
+        Company targetCompany;
+
+        Long targetCompId = request.getTargetCompanyId();
+        if (isSuperAdmin && targetCompId != null) {
+            targetCompany = companyRepository.findById(targetCompId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Target company not found with id: " + targetCompId));
+        } else if (creator != null && creator.getCompany() != null) {
+            targetCompany = creator.getCompany();
+        } else if (isSuperAdmin) {
+            targetCompany = null; // Global system-wide announcement
+        } else {
+            throw new SecurityException("Tenant user must be associated with a valid company to create announcements.");
+        }
+
+        Announcement announcement = new Announcement();
+        announcement.setCompany(targetCompany);
+        announcement.setTitle(request.getTitle());
+        announcement.setMessage(request.getMessage());
+        announcement.setStatus(request.getStatus() != null ? request.getStatus() : AnnouncementStatus.ACTIVE);
+        announcement.setCreatedBy(creator);
+
+        Announcement saved = announcementRepository.save(announcement);
+        return AnnouncementResponse.fromEntity(saved);
+    }
+
+    @Transactional
+    public AnnouncementResponse updateAnnouncement(Long id, AnnouncementRequest request, CustomUserDetails userDetails) {
+        boolean isSuperAdmin = userDetails != null && userDetails.getRole() == Role.SUPER_ADMIN;
+        Long companyId = (isSuperAdmin || userDetails == null) ? null : userDetails.getCompanyId();
+        return updateAnnouncement(id, request, companyId, isSuperAdmin);
+    }
+
+    @Transactional
+    public void deleteAnnouncement(Long id, CustomUserDetails userDetails) {
+        boolean isSuperAdmin = userDetails != null && userDetails.getRole() == Role.SUPER_ADMIN;
+        Long companyId = (isSuperAdmin || userDetails == null) ? null : userDetails.getCompanyId();
+        deleteAnnouncement(id, companyId, isSuperAdmin);
+    }
+
+    private Long resolveEffectiveCompanyId(CustomUserDetails userDetails, Long requestedCompanyId) {
+        if (userDetails != null && userDetails.getRole() == Role.SUPER_ADMIN) {
+            return requestedCompanyId;
+        }
+        if (userDetails == null || userDetails.getCompanyId() == null) {
+            throw new SecurityException("Access denied: User account is not assigned to any active organization tenant.");
+        }
+        return userDetails.getCompanyId();
+    }
+
+    private void validateTenantAccess(Announcement announcement, CustomUserDetails userDetails) {
+        if (userDetails == null) {
+            throw new SecurityException("Authentication required.");
+        }
+        if (userDetails.getRole() != Role.SUPER_ADMIN) {
+            Long userCompanyId = userDetails.getCompanyId();
+            if (userCompanyId == null || announcement.getCompany() == null || !announcement.getCompany().getId().equals(userCompanyId)) {
+                throw new SecurityException("Access denied: You cannot view announcements belonging to another organization.");
+            }
+        }
     }
 }

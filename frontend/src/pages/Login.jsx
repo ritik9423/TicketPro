@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { 
   Building2, 
-  Ticket,
   ArrowRight, 
-  ArrowLeft,
   ShieldCheck, 
   RefreshCw,
   Mail,
@@ -16,7 +14,6 @@ import {
   Layers,
   Users,
   KeyRound,
-  Sparkles,
   CheckCircle2,
   Clock,
   RotateCcw,
@@ -27,6 +24,7 @@ import {
 const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const { companyCodeParam } = useParams();
 
   // Active companies cache for autocomplete
   const [activeCompanies, setActiveCompanies] = useState([]);
@@ -69,6 +67,14 @@ const Login = () => {
       .catch(() => {});
   }, []);
 
+  // Pre-fill company code if passed in URL params
+  useEffect(() => {
+    if (companyCodeParam) {
+      setLoginCompanyCode(companyCodeParam.toUpperCase());
+      setShowCompanyField(true);
+    }
+  }, [companyCodeParam]);
+
   // Check if redirected due to deleted/inactive company or super admin restriction
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -84,10 +90,10 @@ const Login = () => {
 
   // Login State
   const [loginCompanyCode, setLoginCompanyCode] = useState('');
+  const [showCompanyField, setShowCompanyField] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [emailWarning, setEmailWarning] = useState('');
   const [emailTouched, setEmailTouched] = useState(false);
 
@@ -150,7 +156,7 @@ const Login = () => {
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
-  const [resetVerifiedToken, setResetVerifiedToken] = useState('');
+  const [, setResetVerifiedToken] = useState('');
   const [otpLoading, setOtpLoading] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [otpSuccess, setOtpSuccess] = useState('');
@@ -205,7 +211,6 @@ const Login = () => {
         setIsSuperAdminError(false);
         const errMsg = err.message || 'Invalid email address or password.';
         setError(errMsg);
-        // Highlight email field with warning
         setEmailWarning('Invalid email or password. Please verify your credentials.');
       }
     } finally {
@@ -271,7 +276,7 @@ const Login = () => {
       });
       setResetVerifiedToken(res.resetToken || 'verified');
       setOtpSuccess('OTP verified successfully! Now please create your new password.');
-      setOtpStep(3); // Step 3: Now allow user to set new password
+      setOtpStep(3);
     } catch (err) {
       setOtpError(err.message || 'Invalid or expired verification code. Please check and try again.');
     } finally {
@@ -303,7 +308,7 @@ const Login = () => {
         otp: otpCode.trim(),
         newPassword: forgotNewPassword
       });
-      setOtpStep(4); // Step 4: Complete
+      setOtpStep(4);
     } catch (err) {
       setOtpError(err.message || 'Failed to update password. Please try again.');
     } finally {
@@ -312,256 +317,298 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen w-full max-w-full bg-[#f3f4fa] text-left font-sans select-none flex flex-col items-center justify-start pt-4 sm:pt-6 pb-12 px-3 sm:px-6 overflow-x-hidden overflow-y-auto relative">
+    <div className="min-h-screen w-full flex flex-col lg:flex-row bg-[#110a36] text-left font-sans select-none overflow-x-hidden">
 
-      {/* Top Stable Navigation Bar */}
-      <div className="w-full max-w-4xl flex items-center justify-between mb-3 px-0.5 shrink-0">
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center space-x-2 text-xs font-black text-slate-700 hover:text-cyan-700 bg-white hover:bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs transition-all active:scale-95 cursor-pointer"
+      {/* =========================================================================
+          LEFT PANEL: BRAND HERO & WORKSPACE VALUE PROP (Desktop Split & Mobile Top)
+          ========================================================================= */}
+      <div 
+        className="w-full lg:w-1/2 relative p-7 sm:p-10 lg:p-14 xl:p-16 flex flex-col justify-between shrink-0 overflow-hidden"
+        style={{
+          background: 'radial-gradient(circle at 15% 15%, rgba(99, 102, 241, 0.28) 0%, transparent 45%), radial-gradient(circle at 85% 85%, rgba(56, 189, 248, 0.12) 0%, transparent 50%), linear-gradient(155deg, #1b104d 0%, #120a35 55%, #0b0522 100%)'
+        }}
+      >
+        {/* Soft atmospheric background lights */}
+        <div className="absolute top-0 left-0 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none -translate-x-1/2 -translate-y-1/2" />
+        <div className="absolute bottom-0 right-0 w-80 h-80 bg-cyan-500/15 rounded-full blur-3xl pointer-events-none translate-x-1/3 translate-y-1/3" />
+
+        {/* Top Logo Lockup */}
+        <div 
+          onClick={() => navigate('/')} 
+          className="relative z-10 flex items-center space-x-3.5 cursor-pointer group w-fit"
           title="Return to Home"
         >
-          <ArrowLeft className="h-3.5 w-3.5 text-cyan-700" />
-          <span>Back to Home</span>
-        </button>
+          {/* Glowing Brand Icon with Ticket cutout */}
+          <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#0284c7] via-[#0ea5e9] to-[#38bdf8] flex items-center justify-center shadow-[0_0_24px_rgba(56,189,248,0.45)] ring-2 ring-white/20 shrink-0 group-hover:scale-105 transition-transform duration-300">
+            <svg 
+              viewBox="0 0 24 24" 
+              className="w-6 h-6 text-white" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2.2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            >
+              <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z" />
+              <line x1="12" y1="9" x2="12" y2="9.01" strokeWidth="3" />
+              <line x1="12" y1="12" x2="12" y2="12.01" strokeWidth="3" />
+              <line x1="12" y1="15" x2="12" y2="15.01" strokeWidth="3" />
+            </svg>
+          </div>
 
-        <div className="flex items-center space-x-2">
-          <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest hidden sm:inline-block">TicketPro Helpdesk</span>
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          {/* Typography Lockup */}
+          <div className="flex flex-col">
+            <div className="text-2xl font-black tracking-tight leading-none">
+              <span className="text-white">Ticket</span>
+              <span className="text-[#38bdf8]">Pro</span>
+            </div>
+            <div className="text-[8.5px] font-extrabold tracking-[0.24em] text-[#38bdf8] uppercase mt-1 leading-none">
+              SMART TICKETING · BETTER SUPPORT
+            </div>
+          </div>
+        </div>
+
+        {/* Center Hero Messaging */}
+        <div className="relative z-10 mt-8 mb-4 lg:my-auto lg:py-8">
+          <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight leading-[1.12]">
+            Every ticket,<br />
+            handled <span className="text-[#38bdf8]">on time.</span>
+          </h1>
+
+          <p className="text-slate-300 text-sm sm:text-base font-normal mt-4 mb-8 lg:mb-10 max-w-md leading-relaxed hidden sm:block">
+            One calm workspace for your company admins, agents and customers.
+          </p>
+
+          {/* 3 Core Feature Items (Visible on Desktop / Tablets) */}
+          <div className="space-y-5 hidden lg:block">
+            {/* Feature 1 */}
+            <div className="flex items-start space-x-3.5">
+              <div className="w-11 h-11 rounded-xl bg-white/[0.08] border border-white/[0.12] flex items-center justify-center shrink-0 shadow-sm backdrop-blur-sm">
+                <Layers className="w-5 h-5 text-indigo-300" strokeWidth={1.8} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Multi-company workspaces</h3>
+                <p className="text-xs text-slate-300/80 mt-0.5 font-normal">Isolated data for every organization.</p>
+              </div>
+            </div>
+
+            {/* Feature 2 */}
+            <div className="flex items-start space-x-3.5">
+              <div className="w-11 h-11 rounded-xl bg-white/[0.08] border border-white/[0.12] flex items-center justify-center shrink-0 shadow-sm backdrop-blur-sm">
+                <Users className="w-5 h-5 text-indigo-300" strokeWidth={1.8} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Role-based access</h3>
+                <p className="text-xs text-slate-300/80 mt-0.5 font-normal">Company admins, agents and customers.</p>
+              </div>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="flex items-start space-x-3.5">
+              <div className="w-11 h-11 rounded-xl bg-white/[0.08] border border-white/[0.12] flex items-center justify-center shrink-0 shadow-sm backdrop-blur-sm">
+                <ShieldCheck className="w-5 h-5 text-indigo-300" strokeWidth={1.8} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Secure & real-time</h3>
+                <p className="text-xs text-slate-300/80 mt-0.5 font-normal">Encrypted sessions with live updates.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Metrics / Stats Row (Visible on Desktop / Tablets) */}
+        <div className="relative z-10 pt-6 sm:pt-8 hidden lg:flex items-center gap-8 sm:gap-12">
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">4m 12s</div>
+            <div className="text-xs text-slate-400 font-medium mt-0.5">median first reply</div>
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">98.4%</div>
+            <div className="text-xs text-slate-400 font-medium mt-0.5">within SLA</div>
+          </div>
+          <div>
+            <div className="text-xl sm:text-2xl font-black text-white tracking-tight">312</div>
+            <div className="text-xs text-slate-400 font-medium mt-0.5">resolved today</div>
+          </div>
         </div>
       </div>
 
-      {/* SINGLE UNIFIED 2-PANE CARD */}
-      <div className="max-w-4xl w-full bg-white rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden border border-gray-100 grid grid-cols-1 md:grid-cols-12 shrink-0">
+      {/* =========================================================================
+          RIGHT PANEL: AUTHENTICATION FORM (Desktop Split & Mobile Floating Sheet)
+          ========================================================================= */}
+      <div className="w-full lg:w-1/2 bg-white flex flex-col justify-center items-center px-6 sm:px-12 lg:px-16 py-10 lg:py-16 min-h-screen relative z-10 rounded-t-[32px] sm:rounded-t-[36px] lg:rounded-none -mt-6 lg:mt-0 shadow-2xl lg:shadow-none">
+        <div className="w-full max-w-[420px]">
 
-        {/* LEFT PANE: BRANDING BANNER (5 Cols on md+) */}
-        <div className="md:col-span-5 bg-gradient-to-b from-[#3730a3] via-[#312e81] to-[#1e1b4b] p-6 sm:p-8 text-white flex flex-col justify-between relative overflow-hidden">
+          {/* Heading */}
+          <div className="mb-8">
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-[#0f172a] tracking-tight">
+              Welcome back
+            </h2>
+            <p className="text-sm sm:text-base text-[#64748b] font-normal mt-2">
+              Sign in to your support workspace.
+            </p>
+          </div>
 
-          <div className="space-y-4 relative z-10">
-            <div className="inline-flex items-center space-x-2 sm:space-x-2.5 cursor-pointer group shrink-0" onClick={() => navigate('/')}>
-              {/* Outstanding 3D Glassmorphic TicketPro Brand Emblem */}
-              <div className="relative shrink-0 group-hover:scale-105 transition-transform duration-300">
-                <svg 
-                  viewBox="0 0 48 48" 
-                  className="h-9 w-9 sm:h-10 sm:w-10 md:h-11 md:w-11 drop-shadow-[0_4px_12px_rgba(2,132,199,0.38)]" 
-                  fill="none" 
-                  xmlns="http://www.w3.org/2000/svg"
+          {/* Feedback Alerts */}
+          {error && (
+            <div className="p-3.5 mb-6 rounded-2xl bg-red-50 text-red-700 text-xs font-bold border border-red-200 animate-in fade-in space-y-2">
+              <p>{error}</p>
+              {isSuperAdminError && (
+                <div className="pt-1">
+                  <a
+                    href="http://localhost:5174/login"
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#06b6d4] via-[#2563eb] to-[#4f46e5] hover:from-[#0891b2] hover:via-[#1d4ed8] hover:to-[#4338ca] text-white font-black text-xs shadow-sm transition-all"
+                  >
+                    <span>Go to Super Admin Portal (Port 5174)</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {success && (
+            <div className="p-3.5 mb-6 rounded-2xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100 animate-in fade-in">
+              {success}
+            </div>
+          )}
+
+          {/* LOGIN FORM */}
+          <form onSubmit={handleLoginSubmit} className="space-y-5">
+
+            {/* Email Address */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0f172a] mb-2">
+                Email address
+              </label>
+              <input
+                type="email"
+                required
+                autoComplete="username"
+                value={loginEmail}
+                onChange={handleEmailChange}
+                onBlur={handleEmailBlur}
+                placeholder="name@company.com"
+                className={`w-full px-4 py-3.5 bg-white border rounded-2xl text-sm sm:text-base text-[#0f172a] placeholder-[#94a3b8] focus:outline-none transition-all ${
+                  emailWarning
+                    ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-400/20 bg-rose-50/20 text-rose-900'
+                    : 'border-[#e2e8f0] focus:border-[#4f46e5] focus:ring-4 focus:ring-[#4f46e5]/10'
+                }`}
+              />
+              {emailWarning && (
+                <div className="flex items-start space-x-1.5 mt-2 p-2 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-700 animate-in fade-in text-xs font-medium">
+                  <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-rose-600" />
+                  <span>{emailWarning}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-sm font-semibold text-[#0f172a] mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="w-full px-4 py-3.5 pr-12 bg-white border border-[#e2e8f0] rounded-2xl text-sm sm:text-base text-[#0f172a] placeholder-[#94a3b8] focus:border-[#4f46e5] focus:ring-4 focus:ring-[#4f46e5]/10 outline-none transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[#94a3b8] hover:text-[#475569] transition-colors cursor-pointer"
                 >
-                  <defs>
-                    <linearGradient id="tpFeLgBrandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#00d2ff" />
-                      <stop offset="45%" stopColor="#0284c7" />
-                      <stop offset="100%" stopColor="#1d4ed8" />
-                    </linearGradient>
-                    <linearGradient id="tpFeLgSpecGloss" x1="50%" y1="0%" x2="50%" y2="100%">
-                      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.65" />
-                      <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-                    </linearGradient>
-                    <linearGradient id="tpFeLgBorderShine" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
-                      <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.25" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Rich 3D Gradient Base Orb */}
-                  <circle cx="24" cy="24" r="22" fill="url(#tpFeLgBrandGrad)" />
-                  
-                  {/* Specular 3D Glass Highlight Arc */}
-                  <ellipse cx="24" cy="14" rx="15" ry="8" fill="url(#tpFeLgSpecGloss)" opacity="0.4" />
-                  
-                  {/* Crisp Inner Glass Ring */}
-                  <circle cx="24" cy="24" r="21" stroke="url(#tpFeLgBorderShine)" strokeWidth="1.5" />
-
-                  {/* Ultra-Crisp Bespoke Ticket Emblem */}
-                  <g filter="drop-shadow(0 2px 4px rgba(12, 23, 47, 0.3))">
-                    <path 
-                      d="M13 18.5 C13 16.57 14.57 15 16.5 15 H31.5 C33.43 15 35 16.57 35 18.5 V21 C33.34 21 32 22.34 32 24 C32 25.66 33.34 27 35 27 V29.5 C35 31.43 33.43 33 31.5 33 H16.5 C14.57 33 13 31.43 13 29.5 V27 C14.66 27 16 25.66 16 24 C16 22.34 14.66 21 13 21 Z" 
-                      fill="none" 
-                      stroke="#ffffff" 
-                      strokeWidth="2.5" 
-                      strokeLinejoin="round" 
-                      strokeLinecap="round"
-                    />
-                    <line x1="24" y1="18" x2="24" y2="30" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeDasharray="2.5 3" />
-                    <circle cx="18.5" cy="24" r="1.4" fill="#ffffff" />
-                    <circle cx="29.5" cy="24" r="1.4" fill="#ffffff" />
-                  </g>
-                </svg>
-              </div>
-
-              {/* Brand Typography & Tagline Lockup */}
-              <div className="w-fit flex flex-col items-stretch select-none">
-                <div className="text-xl sm:text-2xl md:text-[25px] font-black tracking-tight leading-none text-center">
-                  <span className="text-white">Ticket</span>
-                  <span className="bg-gradient-to-r from-[#38bdf8] via-[#60a5fa] to-[#93c5fd] bg-clip-text text-transparent">Pro</span>
-                </div>
-
-                {/* Tagline Lockup: Tight gap right under TicketPro without blank void */}
-                <div className="w-full mt-[2px] sm:mt-1 flex flex-col items-stretch">
-                  <div className="w-full flex items-center justify-between gap-1 sm:gap-1.5 text-cyan-300 leading-none">
-                    <span className="h-[2px] sm:h-[2.5px] flex-1 bg-cyan-300 rounded-full min-w-[6px]" />
-                    <span className="text-[6.5px] sm:text-[7.5px] md:text-[8px] font-black tracking-[0.16em] sm:tracking-[0.18em] uppercase whitespace-nowrap shrink-0">
-                      SMART TICKETING
-                    </span>
-                    <span className="h-[2px] sm:h-[2.5px] flex-1 bg-cyan-300 rounded-full min-w-[6px]" />
-                  </div>
-                  <div className="w-full text-center text-[6.5px] sm:text-[7.5px] md:text-[8px] font-black tracking-[0.22em] sm:tracking-[0.24em] text-cyan-300 uppercase whitespace-nowrap leading-none mt-[2px]">
-                    BETTER SUPPORT
-                  </div>
-                </div>
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
-            {/* Headline */}
-            <div className="space-y-1">
-              <h1 className="text-lg sm:text-2xl font-black tracking-tight leading-snug">
-                Smart Ticketing<br />
-                for Modern Businesses
-              </h1>
-              <p className="text-xs text-indigo-100/90 font-medium leading-relaxed">
-                Manage, collaborate, and resolve client support inquiries with SLA tracking and live updates.
-              </p>
+            {/* Forgot password? Link */}
+            <div className="flex justify-end pt-0.5">
+              <button
+                type="button"
+                onClick={handleOpenForgotModal}
+                className="text-sm font-medium text-[#4f46e5] hover:text-[#4338ca] hover:underline cursor-pointer transition-colors"
+              >
+                Forgot password?
+              </button>
             </div>
 
-            {/* Features (Visible on tablet/desktop) */}
-            <div className="space-y-2.5 pt-1 hidden sm:block">
-              <div className="flex items-start space-x-2.5">
-                <div className="h-6 w-6 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center text-white shrink-0 mt-0.5 shadow-2xs">
-                  <Layers className="h-3 w-3" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Multi-Company Architecture</h4>
-                  <p className="text-[10px] text-indigo-200 font-medium">Isolated workspaces for every tenant organization.</p>
-                </div>
-              </div>
+            {/* Sign in Button */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 px-5 bg-[#4f46e5] hover:bg-[#4338ca] active:scale-[0.99] text-white text-base font-semibold rounded-2xl shadow-lg shadow-indigo-500/25 transition-all flex items-center justify-center space-x-2 disabled:opacity-60 cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <span>Signing in...</span>
+                </>
+              ) : (
+                <>
+                  <span>Sign in</span>
+                  <ArrowRight className="w-4 h-4 ml-1 inline" />
+                </>
+              )}
+            </button>
 
-              <div className="flex items-start space-x-2.5">
-                <div className="h-6 w-6 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center text-white shrink-0 mt-0.5 shadow-2xs">
-                  <Users className="h-3 w-3" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Role-Based Access</h4>
-                  <p className="text-[10px] text-indigo-200 font-medium">Company Admins, Agents, and End-Users.</p>
-                </div>
+            {/* Divider */}
+            <div className="relative my-7">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[#e2e8f0]" />
               </div>
-
-              <div className="flex items-start space-x-2.5">
-                <div className="h-6 w-6 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center text-white shrink-0 mt-0.5 shadow-2xs">
-                  <ShieldCheck className="h-3 w-3" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white">Encrypted & Real-time</h4>
-                  <p className="text-[10px] text-indigo-200 font-medium">Live WebSockets with 256-bit secure sessions.</p>
-                </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-3 text-[#94a3b8] font-semibold tracking-wider">OR</span>
               </div>
             </div>
-          </div>
 
-          {/* Bottom Vector Illustration */}
-          <div className="pt-2 relative z-10 hidden md:flex justify-center items-end">
-            <div className="relative w-full max-w-[230px]">
-              <svg className="w-full h-30" viewBox="0 0 320 180" fill="none">
-                <rect x="80" y="15" width="220" height="145" rx="10" fill="#ffffff" opacity="0.92" />
-                <path d="M 80 25 C 80 19 85 15 91 15 L 289 15 C 295 15 300 19 300 25 L 300 32 L 80 32 Z" fill="#6366f1" opacity="0.35" />
-                <circle cx="288" cy="23" r="3" fill="#6366f1" />
-                <circle cx="278" cy="23" r="3" fill="#6366f1" />
-                <circle cx="268" cy="23" r="3" fill="#6366f1" />
-
-                <rect x="95" y="42" width="36" height="26" rx="5" fill="#c7d2fe" opacity="0.5" />
-                <rect x="140" y="42" width="95" height="26" rx="5" fill="#e0e7ff" opacity="0.8" />
-                <rect x="245" y="42" width="40" height="26" rx="5" fill="#c7d2fe" opacity="0.5" />
-
-                <rect x="95" y="76" width="36" height="26" rx="5" fill="#e0e7ff" opacity="0.6" />
-                <rect x="140" y="76" width="95" height="26" rx="5" fill="#e0e7ff" opacity="0.8" />
-                <rect x="245" y="76" width="40" height="26" rx="5" fill="#c7d2fe" opacity="0.5" />
-
-                <rect x="95" y="110" width="36" height="26" rx="5" fill="#c7d2fe" opacity="0.5" />
-                <rect x="140" y="110" width="95" height="26" rx="5" fill="#e0e7ff" opacity="0.8" />
-
-                <path d="M 268,135 L 296,135 L 290,170 L 274,170 Z" fill="#312e81" />
-                <path d="M 282,100 Q 310,110 300,132 Q 282,126 282,100 Z" fill="#4338ca" />
-                <path d="M 282,92 Q 260,105 266,128 Q 282,122 282,92 Z" fill="#3730a3" />
-
-                <path d="M 62,60 Q 75,48 88,60 C 88,52 78,46 62,60 Z" fill="#0f172a" />
-                <circle cx="75" cy="68" r="11" fill="#fdba74" />
-                <rect x="72" y="77" width="6" height="6" fill="#fed7aa" />
-                <path d="M 52,92 C 52,80 96,80 96,92 L 96,145 L 52,145 Z" fill="#1e293b" />
-                <rect x="55" y="140" width="38" height="32" fill="#0f172a" />
-                <path d="M 78,95 L 108,110 L 132,110" stroke="#fdba74" strokeWidth="5" strokeLinecap="round" />
-
-                <rect x="25" y="125" width="145" height="7" rx="3" fill="#0f172a" />
-                <rect x="34" y="132" width="5" height="42" fill="#0f172a" />
-                <rect x="155" y="132" width="5" height="42" fill="#0f172a" />
-
-                <path d="M 110,84 L 152,84 L 146,125 L 104,125 Z" fill="#0f172a" />
-                <circle cx="128" cy="102" r="4" fill="#ffffff" />
+            {/* Google OAuth Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setError('Google Single Sign-On is managed by your Enterprise Super Admin.');
+              }}
+              className="w-full py-3 px-4 bg-white hover:bg-slate-50 border border-[#e2e8f0] rounded-2xl text-sm sm:text-base font-semibold text-[#0f172a] shadow-xs active:scale-[0.99] transition-all flex items-center justify-center space-x-3 cursor-pointer"
+            >
+              <svg className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
               </svg>
-            </div>
-          </div>
+              <span>Continue with Google</span>
+            </button>
 
-        </div>
-
-        {/* RIGHT PANE: LOGIN FORM (7 Cols on md+) */}
-        <div className="md:col-span-7 p-6 sm:p-8 lg:p-9 flex flex-col justify-between bg-white text-left">
-
-          <div className="space-y-4">
-
-            {/* Header */}
-            <div className="border-b border-gray-100 pb-3">
-              <h2 className="text-xl sm:text-2xl font-black text-[#111827] tracking-tight">
-                Welcome Back!
-              </h2>
-              <p className="text-xs font-semibold text-gray-400 mt-0.5">
-                Enter your credentials to access your support workspace
-              </p>
-            </div>
-
-            {/* Feedback Alerts */}
-            {error && (
-              <div className="p-3.5 rounded-2xl bg-red-50 text-red-700 text-xs font-bold border border-red-200 animate-in fade-in space-y-2">
-                <p>{error}</p>
-                {isSuperAdminError && (
-                  <div className="pt-1">
-                    <a
-                      href="http://localhost:5174/login"
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#06b6d4] via-[#2563eb] to-[#4f46e5] hover:from-[#0891b2] hover:via-[#1d4ed8] hover:to-[#4338ca] text-white font-black text-xs shadow-sm transition-all"
-                    >
-                      <span>Go to Super Admin Portal (Port 5174)</span>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {success && (
-              <div className="p-3 rounded-2xl bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100 animate-in fade-in">
-                {success}
-              </div>
-            )}
-
-            {/* LOGIN FORM */}
-            <form onSubmit={handleLoginSubmit} className="space-y-3.5">
-              <div className="space-y-1">
+            {/* Optional Workspace Code Toggle (Preserves multi-tenant code support cleanly) */}
+            {showCompanyField ? (
+              <div className="pt-2 animate-in fade-in space-y-1">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-[#111827]">Company Workspace / Code <span className="text-gray-400 font-normal">(Optional)</span></label>
-                  {activeCompanies.length > 0 && (
-                    <span className="text-[10px] font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full">
-                      {activeCompanies.length} Active {activeCompanies.length === 1 ? 'Company' : 'Companies'}
-                    </span>
-                  )}
+                  <label className="block text-xs font-semibold text-[#0f172a]">Workspace Code</label>
+                  <button 
+                    type="button" 
+                    onClick={() => { setShowCompanyField(false); setLoginCompanyCode(''); }}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    Hide
+                  </button>
                 </div>
                 <div className="relative">
                   <input
                     type="text"
                     list="active-companies-datalist"
                     value={loginCompanyCode}
-                    onChange={(e) => setLoginCompanyCode(e.target.value)}
-                    placeholder={activeCompanies.length > 0 ? `e.g. ${activeCompanies.map(c => c.code).join(' or ')}` : "e.g. HDFCBANK or Leave blank"}
-                    className="block w-full rounded-2xl border border-gray-200 px-3.5 py-2.5 pl-10 text-xs font-semibold text-gray-800 placeholder-gray-400 focus:border-[#4f46e5] focus:outline-none transition-all"
+                    onChange={(e) => setLoginCompanyCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. HDFCBANK (Optional)"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-[#e2e8f0] rounded-xl text-xs font-semibold text-[#0f172a] placeholder-[#94a3b8] focus:border-[#4f46e5] focus:outline-none"
                   />
-                  <Building2 className="h-4 w-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <Building2 className="h-4 w-4 text-gray-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <datalist id="active-companies-datalist">
                     {activeCompanies.map(c => (
                       <option key={c.id} value={c.code}>{c.name} ({c.code})</option>
@@ -569,177 +616,35 @@ const Login = () => {
                   </datalist>
                 </div>
               </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-[#111827]">Email Address *</label>
-                  {emailWarning && (
-                    <span className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in">
-                      <AlertCircle className="h-3 w-3" />
-                      Invalid Email
-                    </span>
-                  )}
-                </div>
-                <div className="relative">
-                  <input
-                    type="email"
-                    required
-                    autoComplete="username"
-                    value={loginEmail}
-                    onChange={handleEmailChange}
-                    onBlur={handleEmailBlur}
-                    placeholder="name@company.com"
-                    className={`block w-full rounded-2xl border px-3.5 py-2.5 pl-10 text-xs font-semibold placeholder-gray-400 focus:outline-none transition-all ${
-                      emailWarning
-                        ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-400/20 bg-rose-50/20 text-rose-900'
-                        : 'border-gray-200 focus:border-[#4f46e5] text-gray-800'
-                    }`}
-                  />
-                  <Mail className={`h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                    emailWarning ? 'text-rose-500' : 'text-gray-400'
-                  }`} />
-                </div>
-
-                {/* Email Warning Alert Message */}
-                {emailWarning && (
-                  <div className="flex items-start space-x-1.5 mt-1.5 p-2 rounded-xl bg-rose-50 border border-rose-200/80 text-rose-700 animate-in fade-in slide-in-from-top-1">
-                    <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-rose-600" />
-                    <div className="text-[11px] font-bold leading-tight">
-                      <span>{emailWarning}</span>
-                      {emailWarning.includes('Did you mean') && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const match = emailWarning.match(/\((.*?)\)/);
-                            if (match && match[1]) {
-                              setLoginEmail(match[1]);
-                              setEmailWarning('');
-                            }
-                          }}
-                          className="ml-2 underline text-indigo-700 hover:text-indigo-900 font-black cursor-pointer"
-                        >
-                          Apply
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-[#111827]">Password *</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    autoComplete="current-password"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="Enter your secret password"
-                    className="block w-full rounded-2xl border border-gray-200 px-3.5 py-2.5 pl-10 pr-10 text-xs font-semibold text-gray-800 placeholder-gray-400 focus:border-[#4f46e5] focus:outline-none transition-all"
-                  />
-                  <Lock className="h-4 w-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none cursor-pointer"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Options */}
-              <div className="flex items-center justify-between pt-0.5">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-gray-300 text-[#4f46e5] focus:ring-[#4f46e5]"
-                  />
-                  <span className="text-xs font-semibold text-gray-500">Remember me</span>
-                </label>
+            ) : (
+              <div className="text-center pt-1">
                 <button
                   type="button"
-                  onClick={handleOpenForgotModal}
-                  className="text-xs font-bold text-[#4f46e5] hover:underline cursor-pointer"
+                  onClick={() => setShowCompanyField(true)}
+                  className="text-xs text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
                 >
-                  Forgot password?
+                  Have a specific workspace code?
                 </button>
               </div>
+            )}
 
-              {/* Login Button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 px-4 rounded-2xl bg-[#4f46e5] hover:bg-[#3730a3] text-white text-xs font-black tracking-wide shadow-lg shadow-cyan-500/20 transition-all duration-200 flex items-center justify-center space-x-2 disabled:opacity-50 active:scale-98 cursor-pointer mt-1"
-              >
-                {loading ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 animate-spin text-white" />
-                    <span>Authenticating Workspace...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Login to Workspace</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </>
-                )}
-              </button>
+            {/* Footer Registration Link */}
+            <div className="text-center pt-2">
+              <p className="text-sm text-[#64748b]">
+                New organization?{' '}
+                <Link to="/onboard" className="text-[#4f46e5] font-semibold hover:text-[#4338ca] hover:underline">
+                  Create a workspace
+                </Link>
+              </p>
+            </div>
+          </form>
 
-              {/* Divider */}
-              <div className="relative my-2">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-100" />
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase">
-                  <span className="bg-white px-2 text-gray-400 font-bold tracking-wider">or</span>
-                </div>
-              </div>
-
-              {/* Google OAuth Option */}
-              <button
-                type="button"
-                onClick={() => {
-                  setError('Google Single Sign-On is managed by your Enterprise Super Admin.');
-                }}
-                className="w-full py-2.5 px-4 rounded-2xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-gray-700 transition-all flex items-center justify-center space-x-2 shadow-2xs active:scale-98 cursor-pointer"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Continue with Google</span>
-              </button>
-
-              {/* Onboard Company Link */}
-              <div className="text-center pt-1">
-                <p className="text-xs text-gray-500 font-semibold">
-                  New Organization?{' '}
-                  <Link to="/onboard" className="text-[#4f46e5] font-black hover:underline inline-flex items-center space-x-1">
-                    <span>Register Company Workspace</span>
-                    <Sparkles className="h-3 w-3 text-amber-500" />
-                  </Link>
-                </p>
-              </div>
-            </form>
-
-          </div>
-
-          {/* Footer Security Badge */}
-          <div className="text-center pt-4 mt-2 border-t border-gray-100 flex items-center justify-center space-x-1.5 text-slate-400 text-[11px] font-semibold">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-            <span>Protected by TicketPro Enterprise SSL 256-Bit Encryption</span>
-          </div>
         </div>
-
       </div>
 
-      {/* FORGOT PASSWORD MODAL WITH EMAIL OTP VERIFICATION */}
+      {/* =========================================================================
+          FORGOT PASSWORD MODAL WITH STEP-BY-STEP OTP VERIFICATION
+          ========================================================================= */}
       {showForgotModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100 text-left relative overflow-hidden">
@@ -747,7 +652,7 @@ const Login = () => {
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4">
               <div className="flex items-center space-x-2.5">
-                <div className="h-9 w-9 rounded-xl bg-cyan-50 border border-cyan-100/80 flex items-center justify-center text-cyan-700">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 border border-indigo-100/80 flex items-center justify-center text-indigo-700">
                   <KeyRound className="h-5 w-5" />
                 </div>
                 <div>
@@ -785,15 +690,7 @@ const Login = () => {
                 </p>
 
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-xs font-bold text-slate-700">Account Email</label>
-                    {forgotEmailWarning && (
-                      <span className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1 animate-in fade-in">
-                        <AlertCircle className="h-3 w-3" />
-                        Invalid Email
-                      </span>
-                    )}
-                  </div>
+                  <label className="block text-xs font-bold text-slate-700">Account Email</label>
                   <div className="relative">
                     <input
                       type="email"
@@ -810,7 +707,7 @@ const Login = () => {
                       className={`w-full pl-9 pr-3.5 py-2.5 rounded-2xl border text-xs font-semibold focus:outline-none transition-all ${
                         forgotEmailWarning
                           ? 'border-rose-400 focus:border-rose-500 ring-2 ring-rose-400/20 bg-rose-50/20 text-rose-900'
-                          : 'border-slate-200 focus:border-cyan-500 text-slate-800'
+                          : 'border-slate-200 focus:border-[#4f46e5] text-slate-800'
                       }`}
                     />
                     <Mail className={`h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${
@@ -836,7 +733,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={otpLoading}
-                    className="w-2/3 py-2.5 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-indigo-700 cursor-pointer shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
+                    className="w-2/3 py-2.5 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-[#4338ca] cursor-pointer shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
                   >
                     {otpLoading ? (
                       <>
@@ -881,7 +778,7 @@ const Login = () => {
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                       placeholder="• • • • • •"
-                      className="w-full tracking-widest text-center text-xl font-black py-3 rounded-2xl border-2 border-cyan-200 focus:border-cyan-500 focus:outline-none transition-all shadow-xs"
+                      className="w-full tracking-widest text-center text-xl font-black py-3 rounded-2xl border-2 border-indigo-200 focus:border-[#4f46e5] focus:outline-none transition-all shadow-xs"
                     />
                   </div>
                   <p className="text-[11px] text-slate-400 font-medium">
@@ -892,7 +789,7 @@ const Login = () => {
                       type="button"
                       disabled={resendCooldown > 0 || otpLoading}
                       onClick={handleSendOtp}
-                      className="text-[11px] font-bold text-cyan-700 hover:underline disabled:text-slate-400 disabled:no-underline flex items-center space-x-1 cursor-pointer"
+                      className="text-[11px] font-bold text-[#4f46e5] hover:underline disabled:text-slate-400 disabled:no-underline flex items-center space-x-1 cursor-pointer"
                     >
                       <RotateCcw className="h-3 w-3" />
                       <span>{resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : 'Resend Code'}</span>
@@ -912,7 +809,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={otpLoading || otpCode.length < 6}
-                    className="w-2/3 py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-indigo-700 cursor-pointer shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
+                    className="w-2/3 py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-[#4338ca] cursor-pointer shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
                   >
                     {otpLoading ? (
                       <>
@@ -930,7 +827,7 @@ const Login = () => {
               </form>
             )}
 
-            {/* STEP 3: CREATE NEW PASSWORD (APPEARS ONLY AFTER OTP MATCHES) */}
+            {/* STEP 3: CREATE NEW PASSWORD */}
             {otpStep === 3 && (
               <form onSubmit={handleSetNewPassword} className="space-y-4 animate-in fade-in duration-200">
                 <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center space-x-2">
@@ -948,7 +845,7 @@ const Login = () => {
                       value={forgotNewPassword}
                       onChange={(e) => setForgotNewPassword(e.target.value)}
                       placeholder="At least 8 chars (letters & numbers)"
-                      className="w-full pl-9 pr-10 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold focus:border-cyan-500 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-10 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold focus:border-[#4f46e5] focus:outline-none transition-all"
                     />
                     <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <button
@@ -970,7 +867,7 @@ const Login = () => {
                       value={forgotConfirmPassword}
                       onChange={(e) => setForgotConfirmPassword(e.target.value)}
                       placeholder="Re-type new password"
-                      className="w-full pl-9 pr-3.5 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold focus:border-cyan-500 focus:outline-none transition-all"
+                      className="w-full pl-9 pr-3.5 py-2.5 rounded-2xl border border-slate-200 text-xs font-semibold focus:border-[#4f46e5] focus:outline-none transition-all"
                     />
                     <Lock className="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   </div>
@@ -980,7 +877,7 @@ const Login = () => {
                   <button
                     type="submit"
                     disabled={otpLoading}
-                    className="w-full py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-indigo-700 cursor-pointer shadow-lg shadow-cyan-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
+                    className="w-full py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-[#4338ca] cursor-pointer shadow-lg shadow-indigo-500/20 disabled:opacity-50 transition-all flex items-center justify-center space-x-2 active:scale-98"
                   >
                     {otpLoading ? (
                       <>
@@ -1019,7 +916,7 @@ const Login = () => {
                     setLoginPassword('');
                     setSuccess('Password reset successfully. Please login with your new credentials.');
                   }}
-                  className="w-full py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-indigo-700 cursor-pointer shadow-lg shadow-cyan-500/20 transition-all active:scale-98"
+                  className="w-full py-3 rounded-2xl bg-[#4f46e5] text-white text-xs font-black hover:bg-[#4338ca] cursor-pointer shadow-lg shadow-indigo-500/20 transition-all active:scale-98"
                 >
                   Proceed to Login
                 </button>

@@ -85,6 +85,15 @@ public class OutpostAuthService {
         return status;
     }
 
+    public com.ticketpro.api.dto.outpost.OutpostStatusResponse getStatusDto() {
+        return com.ticketpro.api.dto.outpost.OutpostStatusResponse.builder()
+                .configured(isConfigured())
+                .clientId(outpostProperties.getClientId() != null ? "configured" : "missing")
+                .activeSessions(activeTokenSessions.size())
+                .cachedIntrospections(introspectionCache.size())
+                .build();
+    }
+
     private final java.util.concurrent.atomic.AtomicReference<CachedAppToken> cachedAppTokenRef = new java.util.concurrent.atomic.AtomicReference<>(null);
 
     private static class CachedAppToken {

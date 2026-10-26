@@ -1,48 +1,49 @@
 package com.ticketpro.api.controller;
 
-import com.ticketpro.api.entity.Role;
 import com.ticketpro.api.security.CustomUserDetails;
 import com.ticketpro.api.service.DashboardService;
-import org.springframework.http.HttpStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
 
+/**
+ * Enterprise Dashboard Controller.
+ * Aggregates role-tailored real-time metrics, workload distribution, and ticket KPI analytics.
+ */
 @RestController
-@RequestMapping("/api/dashboard")
+@RequestMapping(path = {"/api/v1/dashboard", "/api/dashboard"})
+@RequiredArgsConstructor
+@Validated
+@Tag(name = "Dashboard", description = "Role-scoped analytics, tenant stats, SLA metrics, and operational performance.")
 public class DashboardController {
 
     private final DashboardService dashboardService;
 
-    public DashboardController(DashboardService dashboardService) {
-        this.dashboardService = dashboardService;
-    }
-
     @GetMapping
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+            summary = "Get aggregated dashboard statistics",
+            description = "Returns role-specific KPI stats (Super Admin global overview, Company Admin tenant stats, Agent workload, or End User ticket summary)."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Dashboard analytics retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized - Authentication required", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Forbidden - Caller has invalid tenant or role context", content = @Content)
+    })
     public ResponseEntity<Map<String, Object>> getDashboardStats(@AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                    "error", "FORBIDDEN",
-                    "message", "Dashboard statistics require an authenticated user identity."
-            ));
-        }
-
-        Role role = userDetails.getRole();
-        Long userId = userDetails.getId();
-        Long companyId = userDetails.getCompanyId();
-
-        if (role == Role.SUPER_ADMIN) {
-            return ResponseEntity.ok(dashboardService.getSuperAdminDashboard());
-        } else if (role == Role.COMPANY_ADMIN || role == Role.MANAGER) {
-            return ResponseEntity.ok(dashboardService.getCompanyAdminDashboard(companyId));
-        } else if (role == Role.AGENT) {
-            return ResponseEntity.ok(dashboardService.getAgentDashboard(userId, companyId));
-        } else {
-            return ResponseEntity.ok(dashboardService.getEndUserDashboard(userId, companyId));
-        }
+        Map<String, Object> stats = dashboardService.getDashboardStats(userDetails);
+        return ResponseEntity.ok(stats);
     }
 }

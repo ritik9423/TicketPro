@@ -4,30 +4,41 @@ import com.ticketpro.api.config.OutpostProperties;
 import com.ticketpro.api.dto.outpost.AnchorUserRequest;
 import com.ticketpro.api.dto.outpost.AnchorUserResponse;
 import com.ticketpro.api.dto.outpost.OutpostCheckTokenResponse;
+import com.ticketpro.api.dto.outpost.OutpostStatusResponse;
 import com.ticketpro.api.dto.outpost.OutpostTokenRequest;
 import com.ticketpro.api.dto.outpost.OutpostTokenResponse;
 import com.ticketpro.api.service.outpost.MapplsAnchorClient;
 import com.ticketpro.api.service.outpost.OutpostAuthService;
 import com.ticketpro.api.service.outpost.OutpostClient;
 import com.ticketpro.api.service.outpost.OutpostTokenService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.util.HashMap;
+import java.net.URI;
 import java.util.Map;
 
 /**
- * REST controller for Outpost authentication diagnostics, token generation,
- * token inspection, and Mappls Anchor user provisioning.
+ * Enterprise-grade REST Controller for Outpost OAuth 2.0 diagnostics, token generation, and introspection.
  */
 @RestController
-@RequestMapping("/api/outpost")
+@RequestMapping(path = {"/api/v1/outpost", "/api/outpost"})
 @RequiredArgsConstructor
+@Validated
 @Slf4j
+@Tag(name = "Outpost Auth", description = "Endpoints for Outpost OAuth 2.0 token generation, introspection diagnostics, and Anchor integration")
 public class OutpostAuthController {
 
     private final OutpostAuthService outpostAuthService;
@@ -36,29 +47,32 @@ public class OutpostAuthController {
     private final MapplsAnchorClient mapplsAnchorClient;
     private final OutpostProperties outpostProperties;
 
-    /**
-     * Diagnostic endpoint to check Outpost configuration and active sessions.
-     * GET /api/outpost/status (Public health status check)
-     */
+    @Operation(summary = "Get Outpost integration diagnostic status", 
+               description = "Returns current status of Outpost credentials, active sessions, and cached token introspections.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Diagnostics retrieved successfully",
+                    content = @Content(schema = @Schema(implementation = OutpostStatusResponse.class)))
+    })
     @GetMapping("/status")
-    public ResponseEntity<Map<String, Object>> getStatus() {
-        return ResponseEntity.ok(outpostAuthService.getStatus());
+    public ResponseEntity<OutpostStatusResponse> getStatus() {
+        return ResponseEntity.ok(outpostAuthService.getStatusDto());
     }
 
-    /**
-     * Inspect / check an Outpost access token against Outpost check_token endpoint.
-     * Supports both GET and POST with query params, form-data, or JSON body.
-     * Matches:
-     * curl --location 'https://outpost.mappls.com/api/security/oauth/check_token' \
-     * --form 'token="08677568-0542-43a2-8a5b-d459a31ecbf5"' \
-     * --form 'api="ast1717396434i298196169"'
-     */
+    @Operation(summary = "Introspect and check an Outpost access token", 
+               description = "Validates an Outpost token via query parameter, form field, or JSON request body.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Token checked",
+                    content = @Content(schema = @Schema(implementation = OutpostCheckTokenResponse.class))),
+            @ApiResponse(responseCode = "400", description = "Token parameter missing")
+    })
     @RequestMapping(value = "/check-token", method = {RequestMethod.GET, RequestMethod.POST})
     public ResponseEntity<OutpostCheckTokenResponse> checkToken(
+            @Parameter(description = "Outpost token to check")
             @RequestParam(name = "token", required = false) String token,
+            @Parameter(description = "API identifier")
             @RequestParam(name = "api", required = false) String api,
-            @RequestBody(required = false) Map<String, String> body) {
-
+            @RequestBody(required = false) Map<String, String> body
+    ) {
         String effectiveToken = token;
         String effectiveApi = api;
 
@@ -82,23 +96,23 @@ public class OutpostAuthController {
         return ResponseEntity.ok(outpostClient.checkToken(effectiveToken, effectiveApi));
     }
 
-    /**
-     * Outpost OAuth 2.0 token generation endpoint.
-     * Matches:
-     * curl --location --request POST 'https://outpost.mappls.com/api/security/oauth/token?grant_type=password&username=&password=&client_id=%3D%3D&client_secret='
-     *
-     * Accepts explicit parameters in query string or JSON body, falling back to server-configured credentials.
-     */
+    @Operation(summary = "Generate Outpost OAuth 2.0 token", 
+               description = "Requests an access token using OAuth 2.0 password or client credentials grant.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Token issued successfully",
+                    content = @Content(schema = @Schema(implementation = OutpostTokenResponse.class))),
+            @ApiResponse(responseCode = "502", description = "Outpost upstream service returned an error")
+    })
     @PostMapping("/token")
-    public ResponseEntity<?> generateOutpostToken(
+    public ResponseEntity<OutpostTokenResponse> generateOutpostToken(
             @RequestParam(name = "grant_type", required = false) String grantTypeParam,
             @RequestParam(name = "username", required = false) String username,
             @RequestParam(name = "password", required = false) String password,
             @RequestParam(name = "client_id", required = false) String clientIdParam,
             @RequestParam(name = "client_secret", required = false) String clientSecretParam,
             @RequestParam(name = "scope", required = false) String scope,
-            @RequestBody(required = false) OutpostTokenRequest requestBody) {
-
+            @RequestBody(required = false) OutpostTokenRequest requestBody
+    ) {
         String effectiveGrant = grantTypeParam;
         String effectiveUsername = username;
         String effectivePassword = password;
@@ -115,7 +129,6 @@ public class OutpostAuthController {
             if (requestBody.getScope() != null && !requestBody.getScope().isBlank()) effectiveScope = requestBody.getScope();
         }
 
-        // Fallback to configured properties if not supplied in request
         if (effectiveClientId == null || effectiveClientId.isBlank()) effectiveClientId = outpostProperties.getClientId();
         if (effectiveClientSecret == null || effectiveClientSecret.isBlank()) effectiveClientSecret = outpostProperties.getClientSecret();
         if (effectiveGrant == null || effectiveGrant.isBlank()) effectiveGrant = outpostProperties.getGrantType();
@@ -123,37 +136,29 @@ public class OutpostAuthController {
         if (effectivePassword == null || effectivePassword.isBlank()) effectivePassword = outpostProperties.getPassword();
         if (effectiveScope == null || effectiveScope.isBlank()) effectiveScope = outpostProperties.getScope();
 
-        try {
-            OutpostTokenResponse response = outpostTokenService.requestToken(
-                    effectiveClientId,
-                    effectiveClientSecret,
-                    effectiveGrant,
-                    effectiveUsername,
-                    effectivePassword,
-                    effectiveScope
-            );
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            Map<String, Object> err = new HashMap<>();
-            err.put("error", "TOKEN_REQUEST_FAILED");
-            err.put("message", e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(err);
-        }
+        OutpostTokenResponse response = outpostTokenService.requestToken(
+                effectiveClientId,
+                effectiveClientSecret,
+                effectiveGrant,
+                effectiveUsername,
+                effectivePassword,
+                effectiveScope
+        );
+        return ResponseEntity.ok(response);
     }
 
-    /**
-     * Direct endpoint to create a user on Mappls Anchor.
-     * Matches:
-     * curl --location 'https://anchor.mappls.com/api/users/' \
-     * --header 'authorization: bearer 33b53c49-0e1e-4e82-afce-51e988ab2e43' \
-     * --header 'content-type: application/json' \
-     * --data-raw '{"name":"TestUser","usernamesws":"testuse11r@example.com","email":"tesadr012@example.com","password":"mapplsQ1234"}'
-     */
+    @Operation(summary = "Create user on Mappls Anchor", 
+               description = "Creates staff account on Mappls Anchor via Outpost gateway.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Anchor user created successfully",
+                    content = @Content(schema = @Schema(implementation = AnchorUserResponse.class))),
+            @ApiResponse(responseCode = "502", description = "Upstream Anchor service failure")
+    })
     @PostMapping("/anchor/users")
     public ResponseEntity<AnchorUserResponse> createAnchorUser(
             @RequestHeader(value = "Authorization", required = false) String authHeader,
-            @Valid @RequestBody AnchorUserRequest request) {
-
+            @Valid @RequestBody AnchorUserRequest request
+    ) {
         log.info("Request to create user on Mappls Anchor for: {}", request.getEmail());
         AnchorUserResponse response;
         if (authHeader != null && !authHeader.isBlank()) {
@@ -163,7 +168,11 @@ public class OutpostAuthController {
         }
 
         if (Boolean.TRUE.equals(response.getSuccess())) {
-            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
+                    .path("/api/v1/anchor/users/{username}")
+                    .buildAndExpand(request.getUsernamesws() != null ? request.getUsernamesws() : request.getEmail())
+                    .toUri();
+            return ResponseEntity.created(location).body(response);
         } else {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(response);
         }
