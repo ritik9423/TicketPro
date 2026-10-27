@@ -86,6 +86,20 @@ class AuthServiceOtpTest {
     }
 
     @Test
+    void sendPasswordResetOtp_NonExistentEmail_ThrowsException() {
+        when(userRepository.findByEmail("random@example.com")).thenReturn(Optional.empty());
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                authService.sendPasswordResetOtp("random@example.com")
+        );
+
+        assertTrue(ex.getMessage().contains("No account found with email address"));
+        verify(passwordResetOtpRepository, never()).invalidateAllPendingByEmail(any());
+        verify(passwordResetOtpRepository, never()).save(any());
+        verify(emailService, never()).sendPasswordResetOtpEmail(any(), any(), any(), anyInt());
+    }
+
+    @Test
     void handleForgotPassword_RoutesToOtpFlow_NoDirectReset() {
         User user = new User();
         user.setEmail("victim@example.com");

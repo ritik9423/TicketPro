@@ -287,14 +287,17 @@ public class AuthService {
         String cleanEmail = email.trim().toLowerCase();
         Optional<User> userOpt = userRepository.findByEmail(cleanEmail);
         if (userOpt.isEmpty()) {
-            // SECURITY H-4: Return identical generic response to prevent email enumeration
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("message", "A 6-digit verification code has been sent to " + maskEmail(cleanEmail) + ". Please check your inbox or spam folder.");
-            response.put("expiresInMinutes", 5);
-            return response;
+            throw new IllegalArgumentException("No account found with email address: " + cleanEmail + ". Please check your email or create a workspace.");
         }
         User user = userOpt.get();
+
+        // Enforce account status check
+        if (user.getStatus() == UserStatus.INACTIVE || user.getStatus() == UserStatus.BLOCKED) {
+            throw new IllegalStateException("Your account has been deactivated. Please contact your company administrator.");
+        }
+        if (user.getStatus() == UserStatus.PENDING) {
+            throw new IllegalStateException("Your account registration is pending administrator approval.");
+        }
 
         // Generate cryptographically secure 6-digit numeric OTP
         int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
@@ -561,6 +564,7 @@ public class AuthService {
         );
     }
 
+    @Transactional
     public CompanyRegisterResponse registerCompanyDto(CompanyRegisterRequest request) {
         Company company = registerCompany(request);
         return CompanyRegisterResponse.builder()
@@ -570,6 +574,7 @@ public class AuthService {
                 .build();
     }
 
+    @Transactional
     public UserRegisterResponse registerUserDto(UserRegisterRequest request) {
         User user = registerUser(
                 request.getName(),
@@ -596,6 +601,7 @@ public class AuthService {
                 .build();
     }
 
+    @Transactional
     public OtpResponse sendPasswordResetOtpDto(SendOtpRequest request) {
         Map<String, Object> map = sendPasswordResetOtp(request.getEmail());
         return OtpResponse.builder()
@@ -605,6 +611,7 @@ public class AuthService {
                 .build();
     }
 
+    @Transactional
     public VerifyOtpResponse verifyPasswordResetOtpOnlyDto(VerifyOtpRequest request) {
         Map<String, Object> map = verifyPasswordResetOtpOnly(request.getEmail(), request.getOtp());
         return VerifyOtpResponse.builder()
@@ -615,6 +622,7 @@ public class AuthService {
                 .build();
     }
 
+    @Transactional
     public OtpResponse verifyPasswordResetOtpAndResetDto(ResetPasswordRequest request) {
         Map<String, Object> map = verifyPasswordResetOtpAndReset(request.getEmail(), request.getOtp(), request.getNewPassword());
         return OtpResponse.builder()

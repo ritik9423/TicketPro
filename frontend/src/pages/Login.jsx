@@ -440,7 +440,7 @@ const Login = () => {
       {/* =========================================================================
           RIGHT PANEL — Switches between LOGIN and FORGOT PASSWORD views inline
           ========================================================================= */}
-      <div className="w-full lg:w-1/2 bg-white flex flex-col justify-center items-center px-6 sm:px-12 lg:px-16 py-10 lg:py-16 min-h-screen relative z-10 rounded-t-[32px] sm:rounded-t-[36px] lg:rounded-none -mt-6 lg:mt-0 shadow-2xl lg:shadow-none">
+      <div className="w-full lg:w-1/2 bg-white flex flex-col justify-start lg:justify-center items-center px-6 sm:px-12 lg:px-16 pt-8 pb-12 sm:pt-10 sm:pb-14 lg:py-16 flex-1 lg:min-h-screen relative z-10 rounded-t-[32px] sm:rounded-t-[36px] lg:rounded-none -mt-6 lg:mt-0 shadow-2xl lg:shadow-none">
         <div className="w-full max-w-[420px]">
 
           {/* ===== LOGIN VIEW ===== */}

@@ -107,10 +107,10 @@ public class SecurityConfig {
                 .requestMatchers("/api/outpost/**", "/api/anchor/**").hasRole("SUPER_ADMIN")
 
                 // 4. Super Admin Only: System impersonation
-                .requestMatchers(HttpMethod.POST, "/api/auth/impersonate/**").hasRole("SUPER_ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/auth/impersonate/**", "/api/v1/auth/impersonate/**").hasRole("SUPER_ADMIN")
 
                 // 5. Authentication & Onboarding (Login, Register, Password Reset, Active Companies for login selector, Onboarding Requests)
-                .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/auth/**", "/api/v1/auth/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/companies/register-request", "/api/companies/register").permitAll()
 
                 // 6. Real-Time WebSockets: STOMP handshake & SockJS (HTTP handshake allowed; STOMP frames validated in ChannelInterceptor)

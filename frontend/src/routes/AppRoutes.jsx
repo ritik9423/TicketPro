@@ -40,6 +40,7 @@ const AppRoutes = () => {
         <Route path="/:companyCodeParam" element={<Login />} />
         <Route path="/onboard" element={<OnboardCompany />} />
         <Route path="/onboard-company" element={<OnboardCompany />} />
+        <Route path="/signup" element={<Navigate to="/onboard" replace />} />
 
         {/* Base Protected Routes for All Authenticated Roles (Company Admin, Manager, Agent, End User) */}
         <Route element={<ProtectedRoute allowedRoles={['SUPER_ADMIN', 'COMPANY_ADMIN', 'MANAGER', 'AGENT', 'USER', 'END_USER', 'CUSTOMER']} />}>
