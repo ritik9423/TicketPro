@@ -56,8 +56,7 @@ const Login = () => {
 
   // Fetch active companies on load for autocomplete / hint
   useEffect(() => {
-    fetch('/api/auth/companies')
-      .then(res => res.ok ? res.json() : [])
+    api.get('/auth/companies')
       .then(data => {
         if (Array.isArray(data)) setActiveCompanies(data);
       })

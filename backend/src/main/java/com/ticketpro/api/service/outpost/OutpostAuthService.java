@@ -170,6 +170,8 @@ public class OutpostAuthService {
             }
         } catch (Exception e) {
             log.warn("Error acquiring token from Mappls Outpost: {}. Using fallback session token for {}. Error: {}", e.getMessage(), cleanEmail, e.getMessage());
+            // Cache fallback for 5 minutes so subsequent logins during Outpost downtime are instantaneous
+            cachedAppTokenRef.set(new CachedAppToken("op_app_fallback", 300L));
         }
 
         // Fallback session token with embedded base64 email so identity survives server restarts

@@ -16,10 +16,15 @@ class WebSocketManager {
 
     let wsUrl = import.meta.env.VITE_WS_URL;
     if (!wsUrl) {
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsHost = window.location.hostname;
-      // Connect to native STOMP WebSocket endpoint registered in Spring
-      wsUrl = `${wsProtocol}//${wsHost}:8081/ws`;
+      const apiUrl = import.meta.env.VITE_API_URL || '/api';
+      if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
+        wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/?$/, '') + '/ws';
+      } else if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+        wsUrl = 'wss://ticketpro-vlpw.onrender.com/ws';
+      } else {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+      }
     }
 
     try {

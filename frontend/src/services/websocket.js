@@ -26,11 +26,15 @@ class TicketProWebSocketService {
     try {
       let wsUrl = import.meta.env.VITE_WS_URL;
       if (!wsUrl) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const isDev = window.location.port !== '';
-        wsUrl = isDev 
-          ? `${protocol}//${window.location.host}/ws/websocket`
-          : `${protocol}//${window.location.hostname}:8081/ws/websocket`;
+        const apiUrl = import.meta.env.VITE_API_URL || '/api';
+        if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
+          wsUrl = apiUrl.replace(/^http/, 'ws').replace(/\/api\/?$/, '') + '/ws/websocket';
+        } else if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+          wsUrl = 'wss://ticketpro-vlpw.onrender.com/ws/websocket';
+        } else {
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          wsUrl = `${protocol}//${window.location.host}/ws/websocket`;
+        }
       }
 
       this.ws = new WebSocket(wsUrl);

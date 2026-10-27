@@ -1,5 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 const ALT_API_URL = 'http://localhost:8081/api';
+// Only use localhost fallback when actually running on localhost (dev mode)
+const IS_LOCAL_DEV = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
 const request = async (endpoint, options = {}) => {
   const token = localStorage.getItem('superadmin_token');
@@ -25,7 +27,8 @@ const request = async (endpoint, options = {}) => {
   try {
     let response = await fetch(`${API_URL}${endpoint}`, config).catch(() => null);
 
-    if (!response || (!response.ok && response.status !== 401 && response.status !== 403 && response.status !== 404 && response.status !== 400)) {
+    // Auto-fallback to direct backend URL only during local development
+    if (IS_LOCAL_DEV && (!response || (!response.ok && response.status !== 401 && response.status !== 403 && response.status !== 404 && response.status !== 400))) {
       const altResp = await fetch(`${ALT_API_URL}${endpoint}`, config).catch(() => null);
       if (altResp) {
         response = altResp;

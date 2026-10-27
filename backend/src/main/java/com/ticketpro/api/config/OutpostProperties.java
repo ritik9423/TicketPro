@@ -88,12 +88,12 @@ public class OutpostProperties {
     /**
      * Connection timeout in milliseconds for Outpost HTTP calls
      */
-    private int connectTimeoutMs = 15000;
+    private int connectTimeoutMs = 3000;
 
     /**
      * Read timeout in milliseconds for Outpost HTTP calls
      */
-    private int readTimeoutMs = 15000;
+    private int readTimeoutMs = 4000;
 
     /**
      * Mappls Anchor base URL, e.g. https://anchor.mappls.com
