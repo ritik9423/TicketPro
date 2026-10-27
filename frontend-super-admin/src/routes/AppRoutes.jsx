@@ -3,18 +3,36 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from '../ProtectedRoute';
 import UserLayout from '../components/layout/UserLayout';
 
+// Resilient lazy loader: automatically reloads the page if a chunk is missing due to a new deployment
+const lazyWithRetry = (componentImport) =>
+  lazy(async () => {
+    const pageHasBeenForceRefreshed = sessionStorage.getItem('sa_page_has_been_force_refreshed') === 'true';
+    try {
+      const component = await componentImport();
+      sessionStorage.setItem('sa_page_has_been_force_refreshed', 'false');
+      return component;
+    } catch (error) {
+      if (!pageHasBeenForceRefreshed) {
+        sessionStorage.setItem('sa_page_has_been_force_refreshed', 'true');
+        window.location.reload();
+        return new Promise(() => {}); // Pause while reloading
+      }
+      throw error;
+    }
+  });
+
 // Lazy Loaded Pages for Optimal Code-Splitting and Instant Load Time
-const Login = lazy(() => import('../pages/Login'));
-const Dashboard = lazy(() => import('../pages/Dashboard'));
-const Companies = lazy(() => import('../pages/Companies'));
-const FormBuilderPage = lazy(() => import('../pages/FormBuilderPage'));
-const TicketsPage = lazy(() => import('../pages/TicketsPage'));
-const Users = lazy(() => import('../pages/Users'));
-const PlansPage = lazy(() => import('../pages/PlansPage'));
-const SLAPoliciesPage = lazy(() => import('../pages/SLAPoliciesPage'));
-const ReportsPage = lazy(() => import('../pages/ReportsPage'));
-const AuditLogsPage = lazy(() => import('../pages/AuditLogsPage'));
-const Profile = lazy(() => import('../pages/Profile'));
+const Login = lazyWithRetry(() => import('../pages/Login'));
+const Dashboard = lazyWithRetry(() => import('../pages/Dashboard'));
+const Companies = lazyWithRetry(() => import('../pages/Companies'));
+const FormBuilderPage = lazyWithRetry(() => import('../pages/FormBuilderPage'));
+const TicketsPage = lazyWithRetry(() => import('../pages/TicketsPage'));
+const Users = lazyWithRetry(() => import('../pages/Users'));
+const PlansPage = lazyWithRetry(() => import('../pages/PlansPage'));
+const SLAPoliciesPage = lazyWithRetry(() => import('../pages/SLAPoliciesPage'));
+const ReportsPage = lazyWithRetry(() => import('../pages/ReportsPage'));
+const AuditLogsPage = lazyWithRetry(() => import('../pages/AuditLogsPage'));
+const Profile = lazyWithRetry(() => import('../pages/Profile'));
 
 // Elegant Route Suspense Fallback Loader
 const SuperAdminPageLoader = () => (

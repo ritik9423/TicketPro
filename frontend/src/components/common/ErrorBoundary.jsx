@@ -14,6 +14,15 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     console.error('TicketPro Caught Crash:', error, errorInfo);
     this.setState({ errorInfo });
+    const msg = error?.message || error?.toString() || '';
+    if (msg.includes('Failed to fetch dynamically imported module') || msg.includes('error loading dynamically imported module')) {
+      const lastReload = sessionStorage.getItem('last_chunk_reload');
+      const now = Date.now();
+      if (!lastReload || now - Number(lastReload) > 8000) {
+        sessionStorage.setItem('last_chunk_reload', String(now));
+        window.location.reload();
+      }
+    }
   }
 
   handleReload = () => {

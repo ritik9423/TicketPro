@@ -3,22 +3,40 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from '../ProtectedRoute';
 import UserLayout from '../components/layout/UserLayout';
 
+// Resilient lazy loader: automatically reloads the page if a chunk is missing due to a new deployment
+const lazyWithRetry = (componentImport) =>
+  lazy(async () => {
+    const pageHasBeenForceRefreshed = sessionStorage.getItem('page_has_been_force_refreshed') === 'true';
+    try {
+      const component = await componentImport();
+      sessionStorage.setItem('page_has_been_force_refreshed', 'false');
+      return component;
+    } catch (error) {
+      if (!pageHasBeenForceRefreshed) {
+        sessionStorage.setItem('page_has_been_force_refreshed', 'true');
+        window.location.reload();
+        return new Promise(() => {}); // Pause while reloading
+      }
+      throw error;
+    }
+  });
+
 // Lazy Loaded Pages for Optimal Production Chunking & Lightning-Fast Initial Load
-const LandingPage = lazy(() => import('../pages/LandingPage'));
-const Login = lazy(() => import('../pages/Login'));
-const OnboardCompany = lazy(() => import('../pages/OnboardCompany'));
-const Dashboard = lazy(() => import('../pages/Dashboard'));
-const TicketsList = lazy(() => import('../pages/TicketsList'));
-const TicketDetails = lazy(() => import('../pages/TicketDetails'));
-const Agents = lazy(() => import('../pages/Agents'));
-const SlaPolicies = lazy(() => import('../pages/SlaPolicies'));
-const KnowledgeBase = lazy(() => import('../pages/KnowledgeBase'));
-const Announcements = lazy(() => import('../pages/Announcements'));
-const SuperAdminFormBuilder = lazy(() => import('../pages/SuperAdminFormBuilder'));
-const Profile = lazy(() => import('../pages/Profile'));
-const Reports = lazy(() => import('../pages/Reports'));
-const Departments = lazy(() => import('../pages/Departments'));
-const Companies = lazy(() => import('../pages/Companies'));
+const LandingPage = lazyWithRetry(() => import('../pages/LandingPage'));
+const Login = lazyWithRetry(() => import('../pages/Login'));
+const OnboardCompany = lazyWithRetry(() => import('../pages/OnboardCompany'));
+const Dashboard = lazyWithRetry(() => import('../pages/Dashboard'));
+const TicketsList = lazyWithRetry(() => import('../pages/TicketsList'));
+const TicketDetails = lazyWithRetry(() => import('../pages/TicketDetails'));
+const Agents = lazyWithRetry(() => import('../pages/Agents'));
+const SlaPolicies = lazyWithRetry(() => import('../pages/SlaPolicies'));
+const KnowledgeBase = lazyWithRetry(() => import('../pages/KnowledgeBase'));
+const Announcements = lazyWithRetry(() => import('../pages/Announcements'));
+const SuperAdminFormBuilder = lazyWithRetry(() => import('../pages/SuperAdminFormBuilder'));
+const Profile = lazyWithRetry(() => import('../pages/Profile'));
+const Reports = lazyWithRetry(() => import('../pages/Reports'));
+const Departments = lazyWithRetry(() => import('../pages/Departments'));
+const Companies = lazyWithRetry(() => import('../pages/Companies'));
 
 // Route Suspense Fallback Spinner
 const PageLoader = () => (
