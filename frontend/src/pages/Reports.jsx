@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { exportTicketsDataset, exportToExcel, exportToCSV, downloadBlob } from '../utils/excelExporter';
+import { extractPageData } from '../utils/paginationHelper';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -68,8 +69,13 @@ const Reports = () => {
     setLoading(true);
     try {
       // Backend enforces tenant isolation and RBAC via JWT
-      const data = await api.get('/tickets').catch(() => []);
-      const apiTickets = Array.isArray(data) ? data : [];
+      const [ticketsResp, csatResp] = await Promise.all([
+        api.get('/tickets?page=0&size=1000').catch(() => null),
+        api.get('/feedback/stats').catch(() => null)
+      ]);
+
+      const pageData = extractPageData(ticketsResp);
+      const apiTickets = Array.isArray(pageData.content) ? pageData.content : [];
 
       let combined = [];
       const userCompId = user?.companyId || user?.company?.id;
@@ -88,13 +94,20 @@ const Reports = () => {
       setTickets(combined);
 
       // Fetch live CSAT statistics from backend
-      try {
-        const csat = await api.get('/feedback/stats');
-        if (csat && typeof csat.averageRating === 'number') {
-          setCsatStats(csat);
-        }
-      } catch (_csatErr) {
-        console.warn('CSAT stats fetch notice:', _csatErr);
+      if (csatResp && (typeof csatResp.averageRating === 'number' || typeof csatResp.totalResponses === 'number')) {
+        const dist = csatResp.ratingDistribution || {};
+        const totalResp = csatResp.totalResponses ?? csatResp.totalFeedbackCount ?? 0;
+        setCsatStats({
+          averageRating: csatResp.averageRating ? Number(csatResp.averageRating.toFixed(1)) : 5.0,
+          totalFeedbackCount: totalResp,
+          fiveStarCount: csatResp.fiveStarCount ?? dist['5'] ?? 0,
+          fourStarCount: csatResp.fourStarCount ?? dist['4'] ?? 0,
+          threeStarCount: csatResp.threeStarCount ?? dist['3'] ?? 0,
+          twoStarCount: csatResp.twoStarCount ?? dist['2'] ?? 0,
+          oneStarCount: csatResp.oneStarCount ?? dist['1'] ?? 0,
+          csatPercentage: csatResp.satisfactionRatePercentage ?? csatResp.csatPercentage ?? 100,
+          agentScorecards: csatResp.agentScorecards || []
+        });
       }
 
       setLastRefreshed(new Date());
@@ -227,13 +240,30 @@ const Reports = () => {
     }
 
     if (!agentMap[realName]) {
-      agentMap[realName] = { solved: 0, total: 0 };
+      agentMap[realName] = { solved: 0, total: 0, rating: '5.0' };
     }
     agentMap[realName].total += 1;
     if (t.status === 'RESOLVED' || t.status === 'CLOSED') {
       agentMap[realName].solved += 1;
     }
   });
+
+  // Also include agents from backend CSAT scorecards if present
+  if (Array.isArray(csatStats.agentScorecards)) {
+    csatStats.agentScorecards.forEach(sc => {
+      if (sc.agentName && !isAdminOrSuperAdmin(sc.agentName)) {
+        if (!agentMap[sc.agentName]) {
+          agentMap[sc.agentName] = {
+            solved: sc.fiveStarCount || sc.totalRatings || 1,
+            total: sc.totalRatings || 1,
+            rating: sc.averageRating ? Number(sc.averageRating).toFixed(1) : '5.0'
+          };
+        } else if (sc.averageRating) {
+          agentMap[sc.agentName].rating = Number(sc.averageRating).toFixed(1);
+        }
+      }
+    });
+  }
 
   const agentLeaderboard = Object.keys(agentMap)
     .filter(agentName => !isAdminOrSuperAdmin(agentName))
@@ -242,7 +272,7 @@ const Reports = () => {
       solved: agentMap[agentName].solved,
       total: agentMap[agentName].total,
       avgSpeed: (1.2 + (idx * 0.3)).toFixed(1) + ' hrs',
-      rating: (4.9 - (idx * 0.1)).toFixed(1)
+      rating: agentMap[agentName].rating || (4.9 - (idx * 0.1)).toFixed(1)
     }))
     .sort((a, b) => b.solved - a.solved);
 

@@ -51,13 +51,13 @@ const ReportsPage = () => {
     setLoading(true);
     try {
       const [ticketsData, companiesData, usersData] = await Promise.all([
-        api.get('/tickets').catch(() => []),
-        api.get('/companies').catch(() => []),
-        api.get('/users').catch(() => [])
+        api.get('/tickets?page=0&size=1000').catch(() => []),
+        api.get('/companies?page=0&size=500').catch(() => []),
+        api.get('/users?page=0&size=500').catch(() => [])
       ]);
-      setTickets(Array.isArray(ticketsData) ? ticketsData : []);
-      setCompanies(Array.isArray(companiesData) ? companiesData : []);
-      setUsers(Array.isArray(usersData) ? usersData : []);
+      setTickets(Array.isArray(ticketsData) ? ticketsData : (Array.isArray(ticketsData?.content) ? ticketsData.content : []));
+      setCompanies(Array.isArray(companiesData) ? companiesData : (Array.isArray(companiesData?.content) ? companiesData.content : []));
+      setUsers(Array.isArray(usersData) ? usersData : (Array.isArray(usersData?.content) ? usersData.content : []));
     } catch (err) {
       console.error('Error fetching report data:', err);
     } finally {

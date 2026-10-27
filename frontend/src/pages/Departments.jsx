@@ -146,7 +146,7 @@ const Departments = () => {
 
       const [deptsData, ticketsData, usersData] = await Promise.all([
         api.get('/departments').catch(() => null),
-        api.get('/tickets').catch(() => null),
+        api.get('/tickets?page=0&size=500').catch(() => null),
         api.get('/users').catch(() => null)
       ]);
 
@@ -174,9 +174,12 @@ const Departments = () => {
         });
       }
 
+      const ticketsList = Array.isArray(ticketsData) ? ticketsData : (Array.isArray(ticketsData?.content) ? ticketsData.content : []);
+      const usersList = Array.isArray(usersData) ? usersData : (Array.isArray(usersData?.content) ? usersData.content : []);
+
       setDepartments(deptsList);
-      setTickets(Array.isArray(ticketsData) ? ticketsData : []);
-      setAgents(Array.isArray(usersData) ? usersData : []);
+      setTickets(ticketsList);
+      setAgents(usersList);
     } catch (err) {
       console.error('Failed to load department data:', err);
     } finally {
