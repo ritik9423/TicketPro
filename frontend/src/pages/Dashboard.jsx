@@ -58,10 +58,9 @@ const Dashboard = () => {
         if (isInitial && !stats) setLoading(true);
 
         const isCustomer = user?.role === 'END_USER' || user?.role === 'CUSTOMER' || user?.role === 'USER';
-        const [statsData, backendTickets, companiesData, csatData] = await Promise.all([
+        const [statsData, backendTickets, csatData] = await Promise.all([
           api.get('/dashboard').catch(() => null),
-          api.get('/tickets').catch(() => null),
-          api.get('/companies').catch(() => null),
+          api.get('/tickets?page=0&size=20').catch(() => null),
           isCustomer ? Promise.resolve(null) : api.get('/feedback/stats').catch(() => null)
         ]);
 
@@ -157,7 +156,7 @@ const Dashboard = () => {
         const lowPriority = ticketList.filter(t => ['LOW', 'NORMAL', 'STANDARD', ''].includes((t.priority || '').toUpperCase())).length;
 
         const sd = statsData || {};
-        const compList = Array.isArray(companiesData) ? companiesData : [];
+        const compList = Array.isArray(sd.companiesList) ? sd.companiesList : [];
 
         // Real-time breakdown calculations based on actual timestamps
         const dayCounts = { Sun: 0, Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0 };
@@ -184,10 +183,10 @@ const Dashboard = () => {
         });
 
         const newStats = {
-          totalTickets: total,
-          openTickets: open,
-          inProgressTickets: inProgress,
-          resolvedTickets: resolved,
+          totalTickets: sd.totalTickets !== undefined ? sd.totalTickets : total,
+          openTickets: sd.openTickets !== undefined ? sd.openTickets : open,
+          inProgressTickets: sd.inProgressTickets !== undefined ? sd.inProgressTickets : inProgress,
+          resolvedTickets: sd.resolvedTickets !== undefined ? sd.resolvedTickets : resolved,
           allTickets: ticketList,
           totalCompanies: sd.totalCompanies || compList.length,
           companiesList: compList,
@@ -198,13 +197,15 @@ const Dashboard = () => {
             satisfactionRatePercentage: 98.0,
             agentScorecards: []
           },
-          recentTickets: ticketList
-            .slice()
-            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-            .slice(0, 8),
-          highPriority,
-          mediumPriority,
-          lowPriority,
+          recentTickets: (Array.isArray(sd.recentTickets) && sd.recentTickets.length > 0)
+            ? sd.recentTickets
+            : ticketList
+                .slice()
+                .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+                .slice(0, 8),
+          highPriority: sd.priorityDistribution?.HIGH !== undefined ? (sd.priorityDistribution.HIGH + (sd.priorityDistribution.CRITICAL || 0)) : highPriority,
+          mediumPriority: sd.priorityDistribution?.MEDIUM !== undefined ? sd.priorityDistribution.MEDIUM : mediumPriority,
+          lowPriority: sd.priorityDistribution?.LOW !== undefined ? sd.priorityDistribution.LOW : lowPriority,
           dayCounts,
           monthCounts,
           yearCounts,

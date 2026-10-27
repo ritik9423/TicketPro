@@ -139,7 +139,7 @@ export const AuthProvider = ({ children }) => {
     if (!user) return;
     syncCompanyState();
 
-    const interval = setInterval(syncCompanyState, 20000);
+    const interval = setInterval(syncCompanyState, 60000);
     const handleFocus = () => syncCompanyState();
 
     window.addEventListener('focus', handleFocus);
