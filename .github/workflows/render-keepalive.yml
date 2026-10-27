@@ -1,0 +1,22 @@
+name: Keep Render Backend Awake 24/7
+
+on:
+  schedule:
+    # Run every 10 minutes (prevents Render 15-minute free tier sleep)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger anytime from GitHub Actions tab
+
+jobs:
+  ping-keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping TicketPro Backend Health Endpoint
+        run: |
+          echo "Pinging TicketPro API..."
+          curl -s -m 30 -w "\nTicketPro HTTP Status: %{http_code} | Total Time: %{time_total}s\n" https://ticketpro-vlpw.onrender.com/api/health || true
+
+      - name: Ping FleetOps Backend Health Endpoint
+        run: |
+          echo "Pinging FleetOps API..."
+          curl -s -m 30 -w "\nFleetOps HTTP Status: %{http_code} | Total Time: %{time_total}s\n" https://fleet-management-system-c9x4.onrender.com/api/health || true

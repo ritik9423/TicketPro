@@ -27,6 +27,15 @@ window.addEventListener('error', (e) => {
   }
 });
 
+// Proactive Backend Warmup & Keep-Alive (Prevents 15-minute Render sleep & ensures <1s instant response)
+const warmBackend = () => {
+  try {
+    fetch('/api/health', { method: 'GET', keepalive: true }).catch(() => {});
+  } catch (e) {}
+};
+warmBackend();
+setInterval(warmBackend, 4 * 60 * 1000);
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />

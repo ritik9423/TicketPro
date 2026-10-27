@@ -23,8 +23,15 @@ const Login = () => {
   const { login } = useAuth();
   const { companyCodeParam } = useParams();
 
-  // Active companies cache for autocomplete
-  const [activeCompanies, setActiveCompanies] = useState([]);
+  // Active companies cache for autocomplete (instant 0ms load from localStorage cache)
+  const [activeCompanies, setActiveCompanies] = useState(() => {
+    try {
+      const cached = localStorage.getItem('ticketpro_cached_companies');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isSuperAdminError, setIsSuperAdminError] = useState(false);
 
   // Auto-login if Impersonation Token passed from Super Admin
@@ -54,11 +61,16 @@ const Login = () => {
     }
   }, []);
 
-  // Fetch active companies on load for autocomplete / hint
+  // Fetch active companies on load for autocomplete / hint (refreshes cache in background)
   useEffect(() => {
     api.get('/auth/companies')
       .then(data => {
-        if (Array.isArray(data)) setActiveCompanies(data);
+        if (Array.isArray(data)) {
+          setActiveCompanies(data);
+          try {
+            localStorage.setItem('ticketpro_cached_companies', JSON.stringify(data));
+          } catch {}
+        }
       })
       .catch(() => {});
   }, []);
